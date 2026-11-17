@@ -1,0 +1,26 @@
+name: Construir y desplegar ARKA DIGITAL
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: arka-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --ignore-scripts
+      - run: npm test
+      - run: npm run check
+      - name: Configurar Supabase y desplegar Render
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          ADMIN_PASSWORD_HASH: ${{ secrets.ADMIN_PASSWORD_HASH }}
+        run: node scripts/deploy.mjs
