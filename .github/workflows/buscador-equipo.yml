@@ -1,0 +1,35 @@
+name: Verificar buscador para trabajador y administrador
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: arka-qa
+  cancel-in-progress: false
+jobs:
+  privacy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/wait-staff-search.mjs
+      - name: Verificar correos privados por rol
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/smoke.mjs
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: node scripts/wait-staff-search.mjs
+      - name: Buscar correos en los paneles sin perder filtros
+        run: node scripts/staff-search-ui.mjs
