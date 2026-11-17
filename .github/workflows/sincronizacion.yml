@@ -1,6 +1,10 @@
 name: Verificar actualización automática entre usuarios
 on:
   workflow_dispatch:
+    inputs:
+      browser_only:
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -8,6 +12,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   events:
+    if: ${{ !inputs.browser_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
