@@ -54,7 +54,7 @@ app.post('/api/admin/:kind',async(req,res)=>{if(req.user.role!=='admin')throw fa
  else throw fail('Sección no encontrada',404);
  const rows=await db(table+(id?'?id=eq.'+encodeURIComponent(id):''),{method:id?'PATCH':'POST',body:data});res.json(table==='arka_users'?rows.map(safeUser):rows);});
 app.post('/api/password',async(req,res)=>{if(!verifyPassword(String(req.body.current||''),req.user.password_hash))throw fail('La contraseña actual no coincide');await db('arka_users?id=eq.'+req.user.id,{method:'PATCH',body:{password_hash:hashPassword(req.body.password),auth_version:req.user.auth_version+1}});res.clearCookie('arka_session',{path:'/'});res.json({ok:true});});
-app.use(express.static(path.join(root,'public'),{maxAge:process.env.NODE_ENV==='production'?'1h':0,etag:true}));app.get('/',(req,res)=>res.sendFile(path.join(root,'public/index.html')));
+app.use(express.static(path.join(root,'public'),{maxAge:process.env.NODE_ENV==='production'?'1h':0,etag:true,setHeaders:(res,file)=>{if(file.endsWith('index.html'))res.setHeader('Cache-Control','no-store');}}));app.get('/',(req,res)=>res.sendFile(path.join(root,'public/index.html')));
 app.use((error,req,res,next)=>{if(error.type==='entity.parse.failed')return res.status(400).json({error:'Formato no válido'});res.status(error.status||500).json({error:error.status?error.message:'Ocurrió un error. Inténtalo nuevamente.'});});
 const maintenance=()=>db('rpc/arka_maintenance',{method:'POST',body:{}}).catch(()=>console.error('Mantenimiento pendiente; se reintentará.'));
 if(process.env.NODE_ENV!=='test'){maintenance();setInterval(maintenance,3600000).unref();app.listen(process.env.PORT||3000,'0.0.0.0',()=>console.log('ARKA DIGITAL iniciada'));}
