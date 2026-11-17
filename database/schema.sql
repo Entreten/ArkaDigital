@@ -15,7 +15,7 @@ create unique index if not exists arka_reports_one_open on arka_reports(account_
 create table if not exists public.arka_withdrawals(id uuid primary key default gen_random_uuid(),worker_id uuid not null references arka_users(id),amount_cents bigint not null check(amount_cents>=1000),bank text not null,account_number text not null,holder text not null,status text not null default 'pending' check(status in ('pending','paid','rejected')),reason text not null default '',created_at timestamptz not null default now(),processed_at timestamptz);
 create table if not exists public.arka_ledger(id uuid primary key default gen_random_uuid(),worker_id uuid not null references arka_users(id),amount_cents bigint not null,kind text not null,reference_id uuid,note text not null default '',created_at timestamptz not null default now());
 create table if not exists public.arka_events(id uuid primary key default gen_random_uuid(),actor_id uuid references arka_users(id),account_id uuid references arka_accounts(id),event text not null,previous_cipher text,detail text not null default '',created_at timestamptz not null default now());
-create table if not exists public.arka_settings(id int primary key default 1 check(id=1),theme text not null default 'original' check(theme in ('original','christmas','love')),announcement text not null default 'Tu próximo gran negocio comienza aquí',announcement_enabled boolean not null default true,announcement_interval int not null default 75 check(announcement_interval between 20 and 3600),support text not null default '',updated_at timestamptz not null default now());
+create table if not exists public.arka_settings(id int primary key default 1 check(id=1),theme text not null default 'original' check(theme in ('original','christmas','love','newyear','easter','halloween','epiphany')),announcement text not null default 'Tu próximo gran negocio comienza aquí',announcement_enabled boolean not null default true,announcement_interval int not null default 75 check(announcement_interval between 20 and 3600),support text not null default '',updated_at timestamptz not null default now());
 insert into arka_settings(id) values(1) on conflict do nothing;
 -- No unauthenticated or browser direct database access. All operations go through the role-checked server.
 do $$ declare t text; begin foreach t in array array['arka_users','arka_products','arka_assignments','arka_banks','arka_orders','arka_items','arka_accounts','arka_reports','arka_withdrawals','arka_ledger','arka_events','arka_settings'] loop execute format('alter table public.%I enable row level security',t); execute format('revoke all on public.%I from anon, authenticated',t); execute format('grant all on public.%I to service_role',t); end loop; end $$;
@@ -169,4 +169,9 @@ notify pgrst,'reload schema';
 create or replace function public.arka_stock() returns table(product_id uuid,quantity bigint) language sql security definer set search_path=public as $$ select product_id,count(*) from arka_accounts where status='available' group by product_id $$;
 revoke all on function public.arka_stock() from public,anon,authenticated;
 grant execute on function public.arka_stock() to service_role;
+notify pgrst,'reload schema';
+
+-- Expand the theme registry without modifying the selected theme or store data.
+alter table public.arka_settings drop constraint if exists arka_settings_theme_check;
+alter table public.arka_settings add constraint arka_settings_theme_check check(theme in ('original','christmas','love','newyear','easter','halloween','epiphany'));
 notify pgrst,'reload schema';

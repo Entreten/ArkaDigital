@@ -2,7 +2,7 @@
 (()=>{
  'use strict';
  const get=(key,fallback)=>{try{return localStorage.getItem(key)??fallback;}catch{return fallback;}},set=(key,value)=>{try{localStorage.setItem(key,String(value));}catch{}};
- const tracks={original:{src:'/audio/arka-original.mp3',title:'Juntos somos más',subtitle:'ARKA DIGITAL · Canción original'},christmas:{src:'/audio/arka-navidad.mp3',title:'Navidad en ARKA',subtitle:'Canción navideña original'},love:{src:'/audio/arka-amor.mp3',title:'Comparte el corazón',subtitle:'Amor y amistad · ARKA'}};
+ const tracks={newyear:{src:'/audio/arka-ano-nuevo.mp3',title:'Un año para brillar',subtitle:'Año Nuevo · ARKA DIGITAL'},easter:{src:'/audio/arka-semana-santa.mp3',title:'Paz y esperanza',subtitle:'Semana Santa · Instrumental original'},halloween:{src:'/audio/arka-halloween.mp3',title:'Una noche especial',subtitle:'Halloween · ARKA DIGITAL'},epiphany:{src:'/audio/arka-reyes.mp3',title:'La ilusión regresará',subtitle:'Reyes Magos · ARKA DIGITAL'},original:{src:'/audio/arka-original.mp3',title:'Juntos somos más',subtitle:'ARKA DIGITAL · Canción original'},christmas:{src:'/audio/arka-navidad.mp3',title:'Navidad en ARKA',subtitle:'Canción navideña original'},love:{src:'/audio/arka-amor.mp3',title:'Comparte el corazón',subtitle:'Amor y amistad · ARKA'}};
  const root=document.createElement('div');root.id='music-root';document.body.append(root);
  const audio=new Audio();audio.loop=true;audio.autoplay=true;audio.preload='auto';audio.volume=Math.min(.6,Math.max(0,Number(get('arka_music_volume','.16'))||0));
  let current='',playing=false,enabled=get('arka_music_enabled_v2','true'),minimized=get('arka_music_minimized','false')==='true',busy=false,hiddenPause=false,autoplayBlocked=false;
@@ -16,5 +16,5 @@
  function activate(event){if(root.contains(event.target)||enabled==='false'||playing||busy)return;play();}document.addEventListener('pointerdown',activate,{passive:true});document.addEventListener('keydown',event=>{if(['Enter',' '].includes(event.key))activate(event);});
  document.addEventListener('visibilitychange',()=>{if(document.hidden){hiddenPause=playing;if(playing)pause(false);}else if(hiddenPause){hiddenPause=false;if(enabled==='true')play();}});
  audio.addEventListener('error',()=>{playing=false;busy=false;draw();});audio.addEventListener('pause',()=>{playing=false;});
- const initial=(document.body.className.match(/theme-(original|christmas|love)/)||[])[1];if(initial)select(initial);else draw();
+ const initial=(document.body.className.match(/theme-(original|christmas|love|newyear|easter|halloween|epiphany)/)||[])[1];if(initial)select(initial);else draw();
 })();
