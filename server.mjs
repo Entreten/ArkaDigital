@@ -32,6 +32,12 @@ app.get('/api/public',async(req,res)=>{const [s]=await db('arka_settings?id=eq.1
 app.post('/api/login',loginLimiter,async(req,res)=>{const email=clean(req.body.email,320).toLowerCase(),password=String(req.body.password||'').slice(0,200);const[u]=await db('arka_users?email=eq.'+encodeURIComponent(email)+'&limit=1');if(!u?.active||!verifyPassword(password,u.password_hash))throw fail('Correo o contraseña incorrectos',401);res.cookie('arka_session',session(u),{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',maxAge:12*3600000,path:'/'});res.json({user:safeUser(u)});});
 app.post('/api/logout',(req,res)=>{res.clearCookie('arka_session',{path:'/'});res.json({ok:true});});
 app.use('/api',(req,res,next)=>req.user?next():res.status(401).json({error:'Inicia sesión para continuar'}));
+
+// Authenticated invalidation stream. No orders, credentials or user data are broadcast.
+const liveClients=new Set();let liveRevision=0;
+function notifyLiveClients(){liveRevision++;const message='event: state-change\ndata: '+JSON.stringify({revision:liveRevision})+'\n\n';for(const response of liveClients){if(response.destroyed||response.writableEnded){liveClients.delete(response);continue;}try{response.write(message);}catch{liveClients.delete(response);response.end();}}}
+app.get('/api/events',(req,res)=>{res.status(200).set({'Content-Type':'text/event-stream','Cache-Control':'no-cache, no-transform','Connection':'keep-alive','X-Accel-Buffering':'no'});res.flushHeaders();res.write('retry: 3000\nevent: ready\ndata: '+JSON.stringify({revision:liveRevision})+'\n\n');liveClients.add(res);const heartbeat=setInterval(()=>{if(!res.destroyed&&!res.writableEnded)res.write(': heartbeat\n\n');},25000);const cleanup=()=>{clearInterval(heartbeat);liveClients.delete(res);};res.once('close',cleanup);res.once('error',cleanup);});
+app.use('/api',(req,res,next)=>{if(req.method==='POST'&&(req.path==='/command'||req.path.startsWith('/admin/')))res.once('finish',()=>{if(res.statusCode>=200&&res.statusCode<300)notifyLiveClients();});next();});
 app.get('/api/me',(req,res)=>res.json({user:safeUser(req.user)}));
 app.get('/api/state',async(req,res)=>{const u=req.user,admin=u.role==='admin',worker=u.role==='worker',own='eq.'+u.id;
  const [settings,products,banks,users,assignments,accounts,orders,reports,withdrawals,ledger]=await Promise.all([

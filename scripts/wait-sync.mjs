@@ -1,0 +1,1 @@
+const url='https://arka-digital.onrender.com';for(let i=0;i<90;i++){const html=await(await fetch(url+'/?qa=live1',{cache:'no-store'})).text();if(html.includes('app.js?v=20261117-live1')){console.log('Actualización automática publicada.');process.exit(0);}await new Promise(r=>setTimeout(r,5000));}throw Error('Render no publicó las actualizaciones automáticas');
