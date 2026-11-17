@@ -1,0 +1,40 @@
+name: Verificar código de transacción obligatorio
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: arka-qa
+  cancel-in-progress: false
+jobs:
+  payments:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Actualizar datos sin cambiar temas ni pedidos anteriores
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migrate.mjs
+      - name: Esperar actualización de Render
+        run: node scripts/wait-payment.mjs
+      - name: Comprobar pagos, entrega y conservación del código
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/smoke.mjs
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: node scripts/wait-payment.mjs
+      - name: Comprobar formulario y paneles en escritorio y móvil
+        run: node scripts/payment-ui-check.mjs

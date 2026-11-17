@@ -1,0 +1,1 @@
+const url='https://arka-digital.onrender.com';for(let i=0;i<90;i++){const html=await(await fetch(url+'/?qa=payment1',{cache:'no-store'})).text();if(html.includes('app.js?v=20261117-payment1')){console.log('Versión con código de transacción publicada.');process.exit(0);}await new Promise(r=>setTimeout(r,5000));}throw Error('Render no publicó la versión de pagos');
