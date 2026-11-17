@@ -97,7 +97,7 @@ declare u arka_users; a arka_accounts; p arka_products; ass arka_assignments; o 
   elsif u.role<>'admin' or o.status not in('pending','review') then raise exception 'Pedido ya procesado o acceso denegado'; end if;
   if action='approve_order' then
    if o.status<>'review' then raise exception 'Primero el cliente debe declarar el pago'; end if;
-   update arka_accounts a set status='sold',buyer_id=o.buyer_id,delivered_at=now(),expires_at=case when p.mode='domain' then now()+interval '72 hours' else now()+make_interval(months=>p.duration_months,days=>p.duration_days) end from arka_products p where a.product_id=p.id and a.order_id=o.id and a.status='reserved';
+   update arka_accounts inv set status='sold',buyer_id=o.buyer_id,delivered_at=now(),expires_at=case when prod.mode='domain' then now()+interval '72 hours' else now()+make_interval(months=>prod.duration_months,days=>prod.duration_days) end from arka_products prod where inv.product_id=prod.id and inv.order_id=o.id and inv.status='reserved';
    update arka_orders set status='delivered',delivered_at=now() where id=o.id;
   else
    update arka_accounts set status='available',order_id=null where order_id=o.id and status='reserved';
