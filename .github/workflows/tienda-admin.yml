@@ -16,4 +16,4 @@ jobs:
       - run: npx playwright install --with-deps --only-shell chromium
       - run: node scripts/wait-store-preview.mjs
       - name: Verificar catálogo real sin compras ni cambio de rol
-        run: node scripts/store-preview-ui.mjs
+        run: node scripts/user-access-ui.mjs && node scripts/cleanup-ui.mjs && node scripts/store-preview-ui.mjs
