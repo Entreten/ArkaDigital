@@ -1,0 +1,40 @@
+name: Verificar anuncios temáticos y últimas mejoras
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  retention:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Aplicar limpieza acordada por tipo de cuenta
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migrate.mjs
+      - name: Verificar vigencias y protección de casos pendientes
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/retention-check.mjs
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: node scripts/wait-announcements.mjs
+      - name: Verificar tienda, controles y siete anuncios adaptables
+        run: node scripts/user-access-ui.mjs && node scripts/cleanup-ui.mjs && node scripts/store-preview-ui.mjs && node scripts/announcements-ui.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: anuncios-tematicos
+          path: qa-announcements/

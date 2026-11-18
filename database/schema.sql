@@ -22,13 +22,21 @@ insert into arka_settings(id) values(1) on conflict do nothing;
 -- No unauthenticated or browser direct database access. All operations go through the role-checked server.
 do $$ declare t text; begin foreach t in array array['arka_users','arka_products','arka_assignments','arka_banks','arka_orders','arka_items','arka_accounts','arka_reports','arka_withdrawals','arka_ledger','arka_events','arka_settings'] loop execute format('alter table public.%I enable row level security',t); execute format('revoke all on public.%I from anon, authenticated',t); execute format('grant all on public.%I to service_role',t); end loop; end $$;
 create or replace function public.arka_maintenance() returns jsonb language plpgsql security definer set search_path=public as $$
-declare v int; begin
+declare entry record; finished record; v int:=0; removed int:=0; begin
  update arka_accounts set status='available',order_id=null where status='reserved' and order_id in(select id from arka_orders where status='pending' and created_at<now()-interval '24 hours');
  update arka_orders set status='expired' where status='pending' and created_at<now()-interval '24 hours';
- update arka_accounts a set cipher=null,status='purged',purged_at=now() from arka_products p where p.id=a.product_id and a.status='sold' and ((p.mode='domain' and a.delivered_at<now()-interval '7 days') or (p.mode='duration' and a.expires_at<now()-interval '7 days')) and not exists(select 1 from arka_reports r where r.account_id=a.id and r.status in('open','escalated'));
- get diagnostics v=row_count;
+ for entry in select a.id from arka_accounts a join arka_products p on p.id=a.product_id where a.status='sold' and ((p.mode='domain' and a.delivered_at<=now()-interval '7 days') or (p.mode='duration' and a.expires_at<=now())) for update of a skip locked loop
+  if exists(select 1 from arka_reports where account_id=entry.id and status in('open','escalated')) then continue; end if;
+  update arka_accounts set cipher=null,status='purged',purged_at=now() where id=entry.id;v:=v+1;
+ end loop;
  update arka_events set previous_cipher=null where account_id in(select id from arka_accounts where purged_at is not null) and previous_cipher is not null;
- return jsonb_build_object('purged',v);
+ for finished in select o.id from arka_orders o where o.status='delivered' and exists(select 1 from arka_accounts where order_id=o.id) and not exists(select 1 from arka_accounts where order_id=o.id and status<>'purged') and not exists(select 1 from arka_reports r join arka_accounts a on a.id=r.account_id where a.order_id=o.id and r.status in('open','escalated')) for update of o skip locked loop
+  delete from arka_reports where account_id in(select id from arka_accounts where order_id=finished.id) and status in('resolved','rejected');
+  update arka_accounts set order_id=null,buyer_id=null where order_id=finished.id and status='purged';
+  delete from arka_items where order_id=finished.id;
+  delete from arka_orders where id=finished.id;removed:=removed+1;
+ end loop;
+ return jsonb_build_object('purged',v,'orders_deleted',removed);
 end $$;
 revoke all on function public.arka_maintenance() from public,anon,authenticated;
 grant execute on function public.arka_maintenance() to service_role;
