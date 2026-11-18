@@ -198,7 +198,7 @@ declare person arka_users; begin
  if person.role not in ('worker','wholesale') then raise exception 'Solo se gestionan trabajadores y mayoristas'; end if;
  if decision='delete' then
   if person.balance_cents<>0 or person.reserved_cents<>0 then raise exception 'No se puede eliminar: primero liquida el saldo y los retiros del trabajador'; end if;
-  if exists(select 1 from arka_withdrawals where worker_id=target and status='pending') or exists(select 1 from arka_orders where buyer_id=target and status in ('pending','review')) or exists(select 1 from arka_reports where (buyer_id=target or worker_id=target) and status in ('open','escalated')) then raise exception 'No se puede eliminar: hay pedidos, retiros o reportes pendientes'; end if;
+  if exists(select 1 from arka_withdrawals where worker_id=target and status='pending') or exists(select 1 from arka_orders where buyer_id=target and status in ('pending','review')) or exists(select 1 from arka_reports where buyer_id=target and status in ('open','escalated')) then raise exception 'No se puede eliminar: hay pedidos, retiros o reportes pendientes'; end if;
   if person.role='worker' and exists(select 1 from arka_accounts where worker_id=target and (status in ('review','rejected'))) then raise exception 'No se puede eliminar: el trabajador tiene cuentas pendientes de revisión o corrección. Puedes suspender su acceso'; end if;
  end if;
  update arka_users set active=(decision='activate'),auth_version=auth_version+1,deleted_at=case when decision='delete' then now() else null end where id=target;
