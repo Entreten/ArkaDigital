@@ -1,0 +1,19 @@
+name: Verificar vista de tienda del administrador
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: node scripts/wait-store-preview.mjs
+      - name: Verificar catálogo real sin compras ni cambio de rol
+        run: node scripts/store-preview-ui.mjs

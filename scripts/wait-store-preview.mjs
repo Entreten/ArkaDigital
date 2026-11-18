@@ -1,0 +1,1 @@
+for(let i=0;i<90;i++){try{const app=await(await fetch('https://arka-digital.onrender.com/app.js?qa=storepreview1',{cache:'no-store'})).text();if(app.includes('function isStorePreview()')){console.log('Vista previa publicada');process.exit(0);}}catch{}await new Promise(r=>setTimeout(r,5000));}throw Error('Render no publicó la vista previa');
