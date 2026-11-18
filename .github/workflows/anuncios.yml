@@ -1,10 +1,15 @@
 name: Verificar anuncios temáticos y últimas mejoras
 on:
   workflow_dispatch:
+    inputs:
+      announcements_only:
+        type: boolean
+        default: false
 permissions:
   contents: read
 jobs:
   retention:
+    if: inputs.announcements_only != true
     runs-on: ubuntu-latest
     timeout-minutes: 8
     steps:
@@ -32,7 +37,12 @@ jobs:
       - run: npx playwright install --with-deps --only-shell chromium
       - run: node scripts/wait-announcements.mjs
       - name: Verificar tienda, controles y siete anuncios adaptables
-        run: node scripts/user-access-ui.mjs && node scripts/cleanup-ui.mjs && node scripts/store-preview-ui.mjs && node scripts/announcements-ui.mjs
+        run: |
+          if [ "${{ inputs.announcements_only }}" = "true" ]; then
+            node scripts/announcements-ui.mjs
+          else
+            node scripts/user-access-ui.mjs && node scripts/cleanup-ui.mjs && node scripts/store-preview-ui.mjs && node scripts/announcements-ui.mjs
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
