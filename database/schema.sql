@@ -1,6 +1,7 @@
 
 create extension if not exists pgcrypto;
 create table if not exists public.arka_users(id uuid primary key default gen_random_uuid(),email text unique not null,name text not null,phone text not null default '',password_hash text not null,role text not null check(role in ('admin','worker','wholesale')),active boolean not null default true,auth_version int not null default 1,balance_cents bigint not null default 0 check(balance_cents>=0),reserved_cents bigint not null default 0 check(reserved_cents>=0 and reserved_cents<=balance_cents),created_at timestamptz not null default now());
+alter table public.arka_users add column if not exists deleted_at timestamptz;
 create table if not exists public.arka_products(id uuid primary key default gen_random_uuid(),name text not null unique,category text not null default 'Streaming',brand text not null default 'ARKA',description text not null default '',conditions text not null default '',price_cents int not null check(price_cents>=0),duration_months int not null default 1 check(duration_months between 0 and 120),duration_days int not null default 0 check(duration_days between 0 and 3660),mode text not null default 'duration' check(mode in ('duration','domain')),color text not null default '#7756ff',image_url text not null default '',active boolean not null default true,created_at timestamptz not null default now());
 create table if not exists public.arka_assignments(id uuid primary key default gen_random_uuid(),worker_id uuid not null references arka_users(id),product_id uuid not null references arka_products(id),quantity int not null check(quantity between 1 and 100000),rate_cents int not null check(rate_cents>=0),active boolean not null default true,created_at timestamptz not null default now());
 create table if not exists public.arka_banks(id uuid primary key default gen_random_uuid(),bank text not null,holder text not null,account_number text not null,kind text not null default 'Ahorros',instructions text not null default '',active boolean not null default true);
@@ -117,7 +118,7 @@ declare u arka_users; a arka_accounts; p arka_products; ass arka_assignments; o 
   select * into p from arka_products where id=a.product_id;
   if a.expires_at<=now() or (p.mode='domain' and a.confirmed_at is not null) then raise exception 'Garantía fuera de plazo o ya confirmada'; end if;
   if length(trim(payload->>'problem'))<5 then raise exception 'Describe el problema'; end if;
-  insert into arka_reports(account_id,buyer_id,worker_id,problem,status) values(a.id,actor,a.worker_id,payload->>'problem',case when a.worker_id is null then 'escalated' else 'open' end);
+  insert into arka_reports(account_id,buyer_id,worker_id,problem,status) values(a.id,actor,case when exists(select 1 from arka_users where id=a.worker_id and active and deleted_at is null) then a.worker_id else null end,payload->>'problem',case when exists(select 1 from arka_users where id=a.worker_id and active and deleted_at is null) then 'open' else 'escalated' end);
  elsif action='resolve_report' then
   select * into r from arka_reports where id=(payload->>'id')::uuid for update;
   if not found or r.status not in('open','escalated') or (u.role<>'admin' and not(u.role='worker' and r.worker_id=actor and r.status='open')) then raise exception 'Reporte no disponible'; end if;
@@ -158,7 +159,7 @@ declare u arka_users; a arka_accounts; p arka_products; ass arka_assignments; o 
  elsif action='credit' then
   if u.role<>'admin' then raise exception 'Solo administrador'; end if;
   cents:=(payload->>'amount_cents')::bigint; if cents<=0 then raise exception 'Importe no válido'; end if;
-  if not exists(select 1 from arka_users where id=(payload->>'worker_id')::uuid and role='worker') then raise exception 'Trabajador no encontrado'; end if;
+  perform 1 from arka_users where id=(payload->>'worker_id')::uuid and role='worker' and deleted_at is null for update; if not found then raise exception 'Trabajador no encontrado'; end if;
   update arka_users set balance_cents=balance_cents+cents where id=(payload->>'worker_id')::uuid;
   insert into arka_ledger(worker_id,amount_cents,kind,note) values((payload->>'worker_id')::uuid,cents,'manual',coalesce(payload->>'note','Abono manual'));
  else raise exception 'Operación no válida'; end if;
@@ -176,4 +177,50 @@ notify pgrst,'reload schema';
 -- Expand the theme registry without modifying the selected theme or store data.
 alter table public.arka_settings drop constraint if exists arka_settings_theme_check;
 alter table public.arka_settings add constraint arka_settings_theme_check check(theme in ('original','christmas','love','newyear','easter','halloween','epiphany'));
+notify pgrst,'reload schema';
+
+-- Preserve financial and warranty history when an administrator removes access.
+create or replace function public.arka_manage_user(actor uuid,target uuid,decision text) returns jsonb language plpgsql security definer set search_path=public as $$
+declare person arka_users; begin
+ if not exists(select 1 from arka_users where id=actor and role='admin' and active and deleted_at is null) then raise exception 'Solo administrador'; end if;
+ if target=actor then raise exception 'No puedes suspender ni eliminar tu propia cuenta'; end if;
+ if decision is null or decision not in ('suspend','activate','delete') then raise exception 'Operación no válida'; end if;
+ select * into person from arka_users where id=target for update;
+ if not found or person.deleted_at is not null then raise exception 'Este usuario fue eliminado o no existe'; end if;
+ if person.role not in ('worker','wholesale') then raise exception 'Solo se gestionan trabajadores y mayoristas'; end if;
+ if decision='delete' then
+  if person.balance_cents<>0 or person.reserved_cents<>0 then raise exception 'No se puede eliminar: primero liquida el saldo y los retiros del trabajador'; end if;
+  if exists(select 1 from arka_withdrawals where worker_id=target and status='pending') or exists(select 1 from arka_orders where buyer_id=target and status in ('pending','review')) or exists(select 1 from arka_reports where (buyer_id=target or worker_id=target) and status in ('open','escalated')) then raise exception 'No se puede eliminar: hay pedidos, retiros o reportes pendientes'; end if;
+  if person.role='worker' and exists(select 1 from arka_accounts where worker_id=target and (status in ('review','rejected'))) then raise exception 'No se puede eliminar: el trabajador tiene cuentas pendientes de revisión o corrección. Puedes suspender su acceso'; end if;
+ end if;
+ update arka_users set active=(decision='activate'),auth_version=auth_version+1,deleted_at=case when decision='delete' then now() else null end where id=target;
+ if decision in ('suspend','delete') and person.role='worker' then update arka_reports set status='escalated' where worker_id=target and status='open'; end if;
+ insert into arka_events(actor_id,event,detail) values(actor,'user_'||decision,'Usuario '||target::text);
+ return jsonb_build_object('ok',true);
+end $$;
+revoke all on function public.arka_manage_user(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.arka_manage_user(uuid,uuid,text) to service_role;
+notify pgrst,'reload schema';
+
+-- Delete only closed administrative records; never delete delivered purchases or credentials.
+create or replace function public.arka_delete_closed(actor uuid,target uuid,kind text) returns jsonb language plpgsql security definer set search_path=public as $$
+declare current_status text; begin
+ if not exists(select 1 from arka_users where id=actor and role='admin' and active and deleted_at is null) then raise exception 'Solo administrador'; end if;
+ if kind='order' then
+  select status into current_status from arka_orders where id=target for update;
+  if not found then raise exception 'Pedido no encontrado'; end if;
+  if current_status not in ('rejected','cancelled','expired') then raise exception 'Solo puedes eliminar ventas rechazadas, canceladas o vencidas sin entrega'; end if;
+  if exists(select 1 from arka_accounts where order_id=target) then raise exception 'No se elimina un pedido con cuentas vinculadas'; end if;
+  delete from arka_items where order_id=target;
+  delete from arka_orders where id=target;
+ elsif kind='report' then
+  select status into current_status from arka_reports where id=target for update;
+  if not found then raise exception 'Reporte no encontrado'; end if;
+  if current_status not in ('resolved','rejected') then raise exception 'Resuelve o rechaza el reporte antes de eliminarlo'; end if;
+  delete from arka_reports where id=target;
+ else raise exception 'Sección no válida'; end if;
+ return jsonb_build_object('ok',true);
+end $$;
+revoke all on function public.arka_delete_closed(uuid,uuid,text) from public,anon,authenticated;
+grant execute on function public.arka_delete_closed(uuid,uuid,text) to service_role;
 notify pgrst,'reload schema';

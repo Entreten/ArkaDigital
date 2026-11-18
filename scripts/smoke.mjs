@@ -5,7 +5,7 @@ const assert=(ok,msg)=>{if(!ok)throw Error(msg);};
 async function mg(path,body){const r=await fetch('https://api.supabase.com/v1'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});if(!r.ok)throw Error('Supabase QA HTTP '+r.status);return r.json();}
 const ps=await mg('/projects'),p=ps.filter(p=>/arka/i.test(p.name));const project=p.length===1?p[0]:ps.length===1?ps[0]:null;assert(project,'Proyecto ambiguo');const ref=project.id||project.ref;const sql=(query,parameters=[])=>mg('/projects/'+ref+'/database/query',{query:query.replace(/\$(\d+)/g,(_,n)=>"'"+String(parameters[Number(n)-1]).replaceAll("'","''")+"'")});
 const email=(role)=>'qa_'+role+'_'+tag+'@example.invalid';let cookie={};const ids={};
-async function request(role,path,body,expected=200){const r=await fetch(url+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Origin:url,...(cookie[role]?{Cookie:cookie[role]}:{})},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();assert(r.status===expected,path+' '+(body?.action||'')+' HTTP '+r.status+(d.error?' '+d.error:''));if(path==='/api/login')cookie[role]=r.headers.get('set-cookie').split(';')[0];return d;}
+async function request(role,path,body,expected=200){const r=await fetch(url+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',Origin:url,...(cookie[role]?{Cookie:cookie[role]}:{})},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();assert(r.status===expected,path+' '+(body?.action||'')+' HTTP '+r.status+(d.error?' '+d.error:''));if(path==='/api/login'&&r.ok)cookie[role]=r.headers.get('set-cookie').split(';')[0];return d;}
 const observers=[];let observedChanges=0;async function observe(role){const controller=new AbortController();const response=await fetch(url+'/api/events',{headers:{Cookie:cookie[role]},signal:controller.signal});assert(response.status===200&&response.headers.get('content-type')?.includes('text/event-stream'),'No se abrió el canal privado');const observer={controller,count:0};observers.push(observer);void(async()=>{const reader=response.body.getReader(),decoder=new TextDecoder();let pending='';try{for(;;){const part=await reader.read();if(part.done)break;pending+=decoder.decode(part.value,{stream:true});const packets=pending.split('\n\n');pending=packets.pop();for(const packet of packets)if(packet.includes('event: state-change')){observer.count++;observedChanges++;}}}catch(error){if(!controller.signal.aborted)observer.error=error.message;}})();}const cmd=async(role,action,payload)=>{const before=observers.map(o=>o.count);const result=await request(role,'/api/command',{action,payload});for(let attempt=0;attempt<50&&observers.some((o,i)=>o.count<=before[i]);attempt++)await new Promise(r=>setTimeout(r,100));assert(observers.every((o,i)=>!o.error&&o.count>before[i]),'No se propagó '+action+' a todas las sesiones');return result;};const state=role=>request(role,'/api/state');let passed=false;
 try{
  await sql('insert into public.arka_users(email,name,password_hash,role) values($1,$2,$3,$4)',[email('admin'),'QA temporal',hash,'admin']);await request('admin','/api/login',{email:email('admin'),password});
@@ -26,6 +26,66 @@ try{
  const detail=await request('buyer','/api/accounts/'+delivered.id);assert(detail.data.observation==='Observación QA','Entrega de observación incorrecta');const purchasePath='/api/orders/'+ids.order+'/accounts?product_id='+ids.product;const purchaseEmails=await request('buyer',purchasePath);assert(purchaseEmails.accounts.length===1&&purchaseEmails.accounts[0].email===detail.data.email,'El correo no aparece en la compra correcta');assert(!('cipher' in purchaseEmails.accounts[0])&&!('password' in purchaseEmails.accounts[0])&&!('observation' in purchaseEmails.accounts[0]),'Se expusieron datos privados en la lista de correos');await request('worker',purchasePath,undefined,403);await request('admin','/api/admin/users',{email:email('outsider'),name:'QA otro mayorista '+tag,phone:'+593900000002',password,role:'wholesale'});await request('outsider','/api/login',{email:email('outsider'),password});await request('outsider',purchasePath,undefined,403);await request('admin','/api/admin/users',{email:email('otherworker'),name:'QA otro trabajador '+tag,phone:'+593900000003',password,role:'worker'});await request('otherworker','/api/login',{email:email('otherworker'),password});assert((await state('otherworker')).accounts.length===0,'Un trabajador recibió cuentas de otro trabajador');const unowned=ids.accounts.find(id=>id!==delivered.id);await request('buyer','/api/accounts/'+unowned,undefined,403);
  await cmd('buyer','report',{account_id:delivered.id,problem:'Fallo de prueba de garantía'});worker=await state('worker');const report=worker.reports.find(r=>r.account_id===delivered.id);assert(report,'Reporte no derivado al trabajador');await cmd('worker','resolve_report',{id:report.id,type:'replacement',email:email('replacement'),password:'qa-warranty',observation:'Reemplazo QA',resolution:'Prueba automática de garantía'});worker=await state('worker');assert(Number(worker.user.balance_cents)===100,'Garantía generó pago indebido');assert((await request('buyer','/api/accounts/'+delivered.id)).data.email===email('replacement'),'Reemplazo no entregado');
  await cmd('admin','credit',{worker_id:ids.worker,amount_cents:1000,note:'Abono temporal QA'});await cmd('worker','withdraw',{amount_cents:1000,bank:'QA',account_number:'NO-REAL',holder:'QA'});worker=await state('worker');assert(Number(worker.user.reserved_cents)===1000,'Reserva de retiro incorrecta');let withdrawal=worker.withdrawals[0];await cmd('admin','process_withdrawal',{id:withdrawal.id,decision:'rejected',reason:'Prueba de liberación de saldo'});worker=await state('worker');assert(Number(worker.user.reserved_cents)===0&&Number(worker.user.balance_cents)===1100,'Rechazo no liberó saldo');await cmd('worker','withdraw',{amount_cents:1000,bank:'QA',account_number:'NO-REAL',holder:'QA'});worker=await state('worker');withdrawal=worker.withdrawals.find(w=>w.status==='pending');await cmd('admin','process_withdrawal',{id:withdrawal.id,decision:'paid'});worker=await state('worker');assert(Number(worker.user.balance_cents)===100&&Number(worker.user.reserved_cents)===0,'Descuento de retiro incorrecto');
+
+
+ // Removal must not undo a warranty or touch delivered purchases and stock.
+ await request('buyer','/api/admin/cleanup',{kind:'report',id:report.id,confirmation:'ELIMINAR'},403);
+ await request('worker','/api/admin/cleanup',{kind:'report',id:report.id,confirmation:'ELIMINAR'},403);
+ await request('admin','/api/admin/cleanup',{kind:'order',id:ids.order,confirmation:'ELIMINAR'},400);
+ await request('admin','/api/admin/cleanup',{kind:'report',id:report.id},400);
+ await request('admin','/api/admin/cleanup',{kind:'report',id:report.id,confirmation:'ELIMINAR'});
+ assert(!(await state('buyer')).reports.some(r=>r.id===report.id)&&!(await state('worker')).reports.some(r=>r.id===report.id),'El reporte resuelto sigue en los paneles');
+ assert((await request('buyer','/api/accounts/'+delivered.id)).data.email===email('replacement'),'Eliminar reporte deshizo la garantía');
+ assert(Number((await state('worker')).user.balance_cents)===100,'Eliminar reporte cambió saldo');
+ await cmd('buyer','report',{account_id:delivered.id,problem:'Segundo reporte temporal para rechazo'});const closedReport=(await state('worker')).reports.find(r=>r.account_id===delivered.id&&r.status==='open');
+ await request('admin','/api/admin/cleanup',{kind:'report',id:closedReport.id,confirmation:'ELIMINAR'},400);
+ await cmd('worker','resolve_report',{id:closedReport.id,type:'reject',resolution:'Rechazo temporal para verificar eliminación'});
+ await request('admin','/api/admin/cleanup',{kind:'report',id:closedReport.id,confirmation:'ELIMINAR'});
+ for(const decision of ['cancel_order','reject_order']){
+  const abandoned=await cmd('buyer','checkout',{items:[{product_id:ids.product,quantity:1}]});
+  await request('admin','/api/admin/cleanup',{kind:'order',id:abandoned.id,confirmation:'ELIMINAR'},400);
+  await cmd(decision==='cancel_order'?'buyer':'admin',decision,{id:abandoned.id,reason:'Prueba temporal'});
+  const beforeStock=(await state('admin')).accounts.filter(a=>a.product_id===ids.product&&a.status==='available').length;
+  await request('admin','/api/admin/cleanup',{kind:'order',id:abandoned.id,confirmation:'ELIMINAR'});
+  const afterCleanup=await state('admin');assert(!afterCleanup.orders.some(o=>o.id===abandoned.id)&&!afterCleanup.items.some(i=>i.order_id===abandoned.id),'No eliminó pedido y detalles');assert(afterCleanup.accounts.filter(a=>a.product_id===ids.product&&a.status==='available').length===beforeStock,'La eliminación alteró stock');
+ }
+ assert((await state('buyer')).orders.some(o=>o.id===ids.order&&o.status==='delivered'),'Se perdió compra entregada');
+ console.log('CLEANUP_OK: reportes resueltos y rechazados eliminados, garantía actualizada y saldo conservados; pedidos cancelados y rechazados eliminados sin alterar stock; pendientes y entregados protegidos; solo administrador.');
+
+ // Account lifecycle uses only this run's temporary users.
+ await request('buyer','/api/admin/user-access',{id:ids.worker,decision:'suspend'},403);
+ await request('worker','/api/admin/user-access',{id:ids.buyer,decision:'delete',confirmation:'ELIMINAR'},403);
+ await request('admin','/api/admin/user-access',{id:(await state('admin')).user.id,decision:'delete',confirmation:'ELIMINAR'},400);
+ await request('admin','/api/admin/user-access',{id:ids.worker,decision:'delete',confirmation:'ELIMINAR'},400);
+ for(const kind of ['worker','wholesale']){
+  const who='lifecycle'+kind,mail=email(who),created=(await request('admin','/api/admin/users',{email:mail,name:'QA acceso '+kind,phone:'+593900000002',password,role:kind}))[0];
+  await request(who,'/api/login',{email:mail,password});const oldCookie=cookie[who];
+  await request('admin','/api/admin/user-access',{id:created.id,decision:'suspend'});
+  await request(who,'/api/me',undefined,401);await request(who,'/api/login',{email:mail,password},401);
+  let kept=(await state('admin')).users.find(u=>u.id===created.id);assert(!kept.active&&!kept.deleted_at,'Suspensión borró el usuario');
+  await request('admin','/api/admin/user-access',{id:created.id,decision:'activate'});cookie[who]=oldCookie;await request(who,'/api/me',undefined,401);
+  await request(who,'/api/login',{email:mail,password});assert((await request(who,'/api/me')).user.active,'No reactivó acceso');
+  await request('admin','/api/admin/user-access',{id:created.id,decision:'delete'},400);
+  if(kind==='wholesale'){await sql("insert into public.arka_orders(buyer_id,total_cents,status) values($1,100,'pending')",[created.id]);await request('admin','/api/admin/user-access',{id:created.id,decision:'delete',confirmation:'ELIMINAR'},400);await sql("update public.arka_orders set status='cancelled' where buyer_id=$1",[created.id]);}
+  await request('admin','/api/admin/user-access',{id:created.id,decision:'delete',confirmation:'ELIMINAR'});
+  if(kind==='wholesale'){const saved=await sql('select count(*)::int n from public.arka_orders where buyer_id=$1',[created.id]);assert(saved[0].n===1,'Se borró el historial al eliminar');}
+  if(kind==='worker')await request('admin','/api/command',{action:'credit',payload:{worker_id:created.id,amount_cents:1000}},400);
+  await request(who,'/api/me',undefined,401);await request(who,'/api/login',{email:mail,password},401);
+  kept=(await state('admin')).users.find(u=>u.id===created.id);assert(kept.deleted_at&&!kept.active,'No archivó el usuario');
+  await request('admin','/api/admin/user-access',{id:created.id,decision:'activate'},400);
+  await request('admin','/api/admin/users',{...created,password,active:true},400);
+ }
+ assert((await state('worker')).accounts.length===2,'La gestión borró el historial de producción');
+
+ await request('admin','/api/admin/user-access',{id:ids.worker,decision:'suspend'});
+ await cmd('buyer','report',{account_id:delivered.id,problem:'Garantía con trabajador temporalmente suspendido'});
+ const fallback=(await state('admin')).reports.find(r=>r.account_id===delivered.id&&r.status==='escalated');assert(fallback&&fallback.worker_id===null,'La garantía quedó atrapada en trabajador suspendido');
+ await cmd('admin','resolve_report',{id:fallback.id,type:'reject',resolution:'Cierre de garantía temporal de prueba'});
+ await request('admin','/api/admin/cleanup',{kind:'report',id:fallback.id,confirmation:'ELIMINAR'});
+ await request('admin','/api/admin/user-access',{id:ids.worker,decision:'activate'});await request('worker','/api/login',{email:email('worker'),password});
+
+ console.log('USER_ACCESS_OK: suspender y reactivar ambos roles; sesiones antiguas invalidadas; eliminación confirmada con historial; saldo protegido; permisos y reactivación de eliminados bloqueados.');
+
  console.log('LIVE_EVENTS_OK='+observedChanges+' avisos recibidos entre administrador, trabajador y mayorista; canal privado y actualizaciones tras cada operación.');
  console.log('SMOKE_OK: correos de producción para administrador y trabajador sin mezclar trabajadores ni exponer contraseñas, correos de compra visibles solo para su comprador y administrador, sin contraseñas en la lista, cupos respetados en revisión, rechazo y aprobación, corrección sin duplicar carga, código de transacción obligatorio, límite de longitud, persistencia para administrador y comprador, roles, revisión, corrección, stock, compra, entrega, vencimiento, garantía sin segundo pago, acceso privado y retiros reservados.');passed=true;
 }catch(error){console.error('QA failure: '+error.message);throw error;}finally{for(const observer of observers)observer.controller.abort();

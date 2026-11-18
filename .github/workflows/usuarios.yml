@@ -1,0 +1,49 @@
+name: Verificar limpieza de ventas, reportes y usuarios
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: arka-qa
+  cancel-in-progress: false
+jobs:
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Actualizar reglas sin cambiar apariencia ni datos
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migrate.mjs
+  access:
+    needs: database
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/wait-user-access.mjs
+      - name: Verificar permisos, acceso y negocio con datos temporales
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/smoke.mjs
+  browser:
+    needs: database
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps --only-shell chromium
+      - run: node scripts/wait-user-access.mjs
+      - name: Verificar controles en siete apariencias y tres tamaños
+        run: node scripts/user-access-ui.mjs && node scripts/cleanup-ui.mjs

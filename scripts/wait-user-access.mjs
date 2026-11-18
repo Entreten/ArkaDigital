@@ -1,0 +1,1 @@
+for(let i=0;i<90;i++){try{const r=await fetch('https://arka-digital.onrender.com/?qa=cleanup1',{cache:'no-store'});if((await r.text()).includes('app.js?v=20261117-cleanup1')){console.log('Versión de gestión de usuarios publicada');process.exit(0);}}catch{}await new Promise(r=>setTimeout(r,5000));}throw Error('Render no publicó la versión esperada');
