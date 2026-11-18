@@ -2,6 +2,9 @@ name: Verificar anuncios temáticos y últimas mejoras
 on:
   workflow_dispatch:
     inputs:
+      retention_only:
+        type: boolean
+        default: false
       announcements_only:
         type: boolean
         default: false
@@ -26,6 +29,7 @@ jobs:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: node scripts/retention-check.mjs
   browser:
+    if: inputs.retention_only != true
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
