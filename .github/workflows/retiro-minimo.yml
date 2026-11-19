@@ -1,0 +1,25 @@
+name: Verificar retiro mínimo de cinco dólares
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  minimum:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Aplicar mínimo de cinco dólares
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migrate.mjs
+      - name: Verificar reserva y límite sin cambiar datos reales
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/withdraw-min-check.mjs
+      - run: npm install --no-save --package-lock=false playwright
+      - name: Verificar formulario publicado en Render
+        run: node scripts/withdraw-min-ui.mjs
