@@ -25,10 +25,11 @@ insert into arka_settings(id) values(1) on conflict do nothing;
 do $$ declare t text; begin foreach t in array array['arka_users','arka_products','arka_assignments','arka_banks','arka_orders','arka_items','arka_accounts','arka_reports','arka_withdrawals','arka_ledger','arka_events','arka_settings'] loop execute format('alter table public.%I enable row level security',t); execute format('revoke all on public.%I from anon, authenticated',t); execute format('grant all on public.%I to service_role',t); end loop; end $$;
 create or replace function public.arka_maintenance() returns jsonb language plpgsql security definer set search_path=public as $$
 declare entry record; finished record; v int:=0; removed int:=0; begin
- update arka_accounts set status='available',order_id=null where status='reserved' and order_id in(select id from arka_orders where status='pending' and created_at<now()-interval '24 hours');
- update arka_orders set status='expired' where status='pending' and created_at<now()-interval '24 hours';
+ update arka_accounts set status='available',order_id=null where status='reserved' and order_id in(select id from arka_orders where status='pending' and created_at<now()-make_interval(hours=>coalesce((select pending_hours from arka_finance_settings where id=1),24)));
+ update arka_orders set status='expired' where status='pending' and created_at<now()-make_interval(hours=>coalesce((select pending_hours from arka_finance_settings where id=1),24));
  for entry in select a.id from arka_accounts a join arka_products p on p.id=a.product_id where a.status='sold' and ((p.mode='domain' and a.delivered_at<=now()-interval '7 days') or (p.mode='duration' and a.expires_at<=now())) for update of a skip locked loop
   if exists(select 1 from arka_reports where account_id=entry.id and status in('open','escalated')) then continue; end if;
+  if exists(select 1 from arka_change_units cu join arka_change_orders co on co.id=cu.order_id where cu.linked_account_id=entry.id and ((co.status='delivered' and co.access_until>now()) or co.status in('pending','payment_review','processing'))) then continue;end if;
   update arka_accounts set cipher=null,status='purged',purged_at=now() where id=entry.id;v:=v+1;
  end loop;
  update arka_events set previous_cipher=null where account_id in(select id from arka_accounts where purged_at is not null) and previous_cipher is not null;

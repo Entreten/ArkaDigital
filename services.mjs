@@ -19,7 +19,9 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   }
   if(o.status!=='processing')throw fail('Los datos se habilitan tras verificar el pago.',403);
   if(user.role==='wholesale'&&!['blocked','refund_requested'].includes(unit.status))throw fail('Los resultados se entregan juntos al finalizar el pedido.',403);
-  const request=unseal(o.request_cipher)||{},original=unseal(secret?.original_cipher)||{};
+  const request=unseal(o.request_cipher)||{};let original=unseal(secret?.original_cipher);
+  if(!original&&unit.linked_account_id){const a=await one('arka_accounts',unit.linked_account_id);if(a.buyer_id!==o.buyer_id)throw fail('Cuenta vinculada no disponible.',403);original=unseal(a.cipher);}
+  original=original||{};
   const response={unit,order:{id:o.id,number:o.number,mode:o.mode,offer_name:o.offer_name,unit_cents:o.unit_cents,margin_cents:o.margin_cents,instructions:o.instructions},request,original,suggestion:unseal(secret?.suggestion_cipher)};
   if(user.role!=='wholesale')response.result=unseal(secret?.result_cipher);
   return response;
@@ -35,7 +37,7 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   const normalized={email:String(original.email||'').trim().toLowerCase(),password:String(original.password||'')};
   const encrypted=accountInput(normalized);
   const suggestion={email:mode==='password'?normalized.email:suggestEmail(request.pattern),password:mode==='email'?normalized.password:request.fixed_password||randomBytes(18).toString('base64url')};
-  return {...encrypted,linked_account_id:link,suggestion_cipher:seal(suggestion)};
+  return {...encrypted,cipher:link&&useLinkedData?null:encrypted.cipher,linked_account_id:link,suggestion_cipher:seal(suggestion)};
  }
  app.get('/api/services/state',async(req,res)=>res.json(await state(req.user)));
  app.get('/api/services/orders/:id/instructions',async(req,res)=>{
@@ -119,9 +121,9 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   };
   if(!admin){result.offers=result.offers.map(({margin_cents,workers,...offer})=>offer);return result;}
   if(Date.now()-storageAt>60000){storageCache=await db('rpc/arka_storage_stats',{method:'POST',body:{}});storageAt=Date.now();}
-  const [settings,finance,costs,sales,users,wallet]=await Promise.all([
+  const [settings,finance,costs,sales,users,wallet,receipts]=await Promise.all([
    db('arka_finance_settings?id=eq.1'),all('arka_finance','','id,event_key,kind,amount_cents,reference_id,user_id,description,created_at'),
-   all('arka_costs'),all('arka_sales'),all('arka_users','','id,name,role,balance_cents,reserved_cents,credit_cents'),all('arka_wallet')
+   all('arka_costs'),all('arka_sales'),all('arka_users','','id,name,role,balance_cents,reserved_cents,credit_cents'),all('arka_wallet'),all('arka_receipts')
   ]);
   const sum=(rows,key='amount_cents')=>rows.reduce((n,r)=>n+Number(r[key]||0),0);
   result.finance={settings:settings[0],entries:finance,costs,sales,storage:storageCache,
@@ -132,6 +134,7 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
    withdrawn:-sum(finance.filter(f=>f.kind==='withdrawal')),
    workers_due:sum(users.filter(u=>u.role==='worker'),'balance_cents'),
    buyer_credits:sum(users,'credit_cents'),
+   verified_receipts:sum(receipts,'cash_cents'),
    pending_historical:sum(costs.filter(c=>c.fee_state==='pending'),'fee_cents'),
    unknown_costs:sales.filter(s=>s.cost_cents===null).length,
    pending_reserve:sales.filter(s=>s.monthly&&s.reserve_bps===null&&s.cost_cents!==null).length,

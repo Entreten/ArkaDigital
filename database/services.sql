@@ -28,6 +28,9 @@ create table if not exists public.arka_finance(
 create table if not exists public.arka_sales(
  account_id uuid primary key,order_id uuid not null,unit_cents bigint not null,
  cost_cents bigint,monthly boolean not null,reserve_bps int,created_at timestamptz not null);
+create table if not exists public.arka_receipts(
+ reference_id uuid primary key,kind text not null,cash_cents bigint not null check(cash_cents>=0),
+ credit_cents bigint not null check(credit_cents>=0),verified_at timestamptz not null);
 create table if not exists public.arka_change_offers(
  id uuid primary key default gen_random_uuid(),name text not null check(length(name) between 2 and 150),
  mode text not null check(mode in('email','password','both')),price_cents int not null check(price_cents>0),
@@ -69,7 +72,7 @@ create table if not exists public.arka_change_notifications(
  id uuid primary key default gen_random_uuid(),user_id uuid not null references arka_users(id),
  order_id uuid not null,unit_id uuid,message text not null,read_at timestamptz,created_at timestamptz not null default now());
 create index if not exists arka_change_notifications_user on arka_change_notifications(user_id,created_at desc);
-do $$ declare t text; begin foreach t in array array['arka_finance_settings','arka_wallet','arka_costs','arka_finance','arka_sales','arka_change_offers','arka_change_orders','arka_change_units','arka_change_secrets','arka_change_history','arka_change_notifications'] loop
+do $$ declare t text; begin foreach t in array array['arka_finance_settings','arka_wallet','arka_costs','arka_finance','arka_sales','arka_receipts','arka_change_offers','arka_change_orders','arka_change_units','arka_change_secrets','arka_change_history','arka_change_notifications'] loop
  execute format('alter table public.%I enable row level security',t);
  execute format('revoke all on public.%I from anon,authenticated',t);
  execute format('grant all on public.%I to service_role',t);
@@ -156,6 +159,8 @@ create or replace function public.arka_book_stock(target uuid) returns void lang
 declare o arka_orders;r record;reserve_rate int; profit bigint;reserved bigint;
 begin
  select * into o from arka_orders where id=target and status='delivered';if not found then return;end if;
+ insert into arka_receipts(reference_id,kind,cash_cents,credit_cents,verified_at)
+ values(o.id,'stock',coalesce(o.paid_cents,o.total_cents-o.credit_cents),o.credit_cents,o.delivered_at) on conflict do nothing;
  select reserve_bps into reserve_rate from arka_finance_settings where id=1;
  for r in select a.id,a.product_id,i.unit_cents,c.base_cents,c.own,c.worker_id,
  (p.mode='duration' and p.duration_months>0) monthly
@@ -169,6 +174,10 @@ begin
   reserved:=case when r.monthly and reserve_rate is not null then (greatest(profit,0)*reserve_rate+5000)/10000 else 0 end;
   insert into arka_finance(event_key,kind,amount_cents,reference_id,description,created_at)
    values('stock-margin:'||r.id,'margin',profit-reserved,o.id,'Margen comercial venta de stock',o.delivered_at) on conflict do nothing;
+  if r.own then
+   insert into arka_finance(event_key,kind,amount_cents,reference_id,user_id,description,created_at)
+    values('own-stock:'||r.id,'own',r.base_cents,o.id,r.worker_id,'Producción propia vendida',o.delivered_at) on conflict do nothing;
+  end if;
   if reserved>0 then insert into arka_finance(event_key,kind,amount_cents,reference_id,description,created_at)
    values('stock-reserve:'||r.id,'reserve',reserved,o.id,'Reserva de garantía mensual',o.delivered_at) on conflict do nothing;end if;
  end loop;
@@ -236,8 +245,6 @@ begin
     where product_id=(payload->>'product_id')::uuid and email_fingerprint=account->>'fingerprint' and worker_id is null returning * into a;
    if found and s.id is not null then
     insert into arka_costs(account_id,assignment_id,worker_id,base_cents,own) values(a.id,s.id,actor,s.rate_cents,true);
-    insert into arka_finance(event_key,kind,amount_cents,reference_id,user_id,description)
-     values('own-stock:'||a.id,'own',s.rate_cents,a.id,actor,'Producción propia del administrador');
    end if;
   end loop;
  end if;return result;
@@ -276,6 +283,9 @@ begin
   perform arka_wallet_move(actor,'change-credit:'||oid,-credit,oid,'Saldo aplicado al pedido de cambios');
   update arka_change_orders set credit_cents=credit,status=case when total_cents=credit then 'processing' else 'pending' end,
    verified_at=case when total_cents=credit then now() else null end where id=oid;
+  if (select total_cents=credit from arka_change_orders where id=oid) then
+   insert into arka_receipts(reference_id,kind,cash_cents,credit_cents,verified_at) values(oid,'change',0,credit,now());
+  end if;
   insert into arka_change_history(order_id,actor_id,action) values(oid,actor,'create');
   return jsonb_build_object('id',oid);
  end if;
@@ -298,6 +308,7 @@ begin
  elsif action='verify_payment' then
   if u.role<>'admin' or o.status<>'payment_review' then raise exception 'Pago no disponible';end if;
   update arka_change_orders set status='processing',verified_at=now() where id=oid;
+  insert into arka_receipts(reference_id,kind,cash_cents,credit_cents,verified_at) values(oid,'change',o.paid_cents,o.credit_cents,now());
  elsif action='cancel' then
   if not ((u.role='wholesale' and o.status='pending') or (u.role='admin' and o.status in('pending','payment_review'))) then raise exception 'Solo puede cancelarse un pedido sin pago verificado';end if;
   perform arka_wallet_move(o.buyer_id,'change-cancel:'||oid,o.credit_cents,oid,'Saldo liberado por cancelación');
@@ -449,6 +460,12 @@ declare o arka_change_orders;settings arka_finance_settings;n int:=0;begin
  update arka_events set previous_cipher=null where previous_cipher is not null and created_at<now()-interval '7 days'
   and not exists(select 1 from arka_reports where account_id=arka_events.account_id and status in('open','escalated'));
  delete from arka_change_notifications where read_at<now()-interval '30 days';
+ -- Keep monetary summaries; remove personal input and abandoned unit details after the visible retention period.
+ for o in select * from arka_change_orders where status in('expired','cancelled') and created_at<now()-make_interval(days=>settings.unpaid_retention_days) and purged_at is null for update skip locked loop
+  delete from arka_change_secrets where unit_id in(select id from arka_change_units where order_id=o.id);
+  update arka_change_units set source_fingerprint=id::text,result_fingerprint=null,linked_account_id=null,reason='' where order_id=o.id;
+  update arka_change_orders set request_cipher=null,sender=null,transaction_code=null,purged_at=now() where id=o.id;
+ end loop;
  return jsonb_build_object('purged_change_orders',n);
 end $$;
 create or replace function public.arka_storage_stats() returns jsonb language sql security definer set search_path=public as $$

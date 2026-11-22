@@ -40,6 +40,10 @@
   if(view==='finances'){renderFinance();return;}
   if(view==='own-production'){renderOwnProduction();return;}
   renderContentOriginal();
+  if(view==='wallet'&&role()==='worker'){
+   const totals=document.createElement('section');totals.className='panel';
+   totals.innerHTML='<h3>Mis ganancias acumuladas</h3><p>Neto registrado: <strong>'+money(S.ledger.filter(l=>l.kind!=='withdrawal').reduce((n,l)=>n+Number(l.amount_cents),0))+'</strong> · Retiros pagados: '+money(-S.ledger.filter(l=>l.kind==='withdrawal').reduce((n,l)=>n+Number(l.amount_cents),0))+'</p><p class="subtle">El historial muestra la producción, los cambios entregados y los ajustes de comisión por separado.</p>';$('#content').append(totals);
+  }
  };
  function renderOffers(admin){
   const offers=X().offers;
@@ -72,6 +76,7 @@
   (f.unknown_costs?'<div class="notice">'+f.unknown_costs+' cuentas vendidas no tienen coste verificable. Su ganancia no se inventa ni se incluye como disponible.</div>':'')+
   (f.pending_reserve?'<div class="notice">La reserva no tiene porcentaje configurado para '+f.pending_reserve+' ventas mensuales. Configúrala expresamente antes de registrar retiros.</div>':'')+
   '<div class="metrics">'+metric('Tu saldo contable disponible',money(f.available))+metric('Fondos en cambios en proceso',money(f.funds_processing))+metric('Deuda con trabajadores',money(f.workers_due))+metric('Saldo a favor de mayoristas',money(f.buyer_credits))+'</div>'+
+  '<p class="notice">Cobros bancarios verificados registrados: '+money(f.verified_receipts)+'. No equivalen a tu ganancia ni al saldo bancario actual.</p>'+
   '<div class="metrics">'+metric('Ganancia comercial acumulada',money(f.commercial))+metric('Mi trabajo realizado',money(f.own))+metric('Comisiones cobradas',money(f.commissions))+metric('Mis retiros registrados',money(f.withdrawn))+'</div>'+
   panel('Reserva y almacenamiento','<div class="change-finance-line"><strong>Reserva disponible: '+money(f.reserve)+'</strong>'+click('Devolución desde reserva','reserve-refund')+'</div><p>Uso actual de base de datos: '+(Number(f.storage.used_bytes)/1048576).toFixed(2)+' MB / '+(Number(f.storage.limit_bytes)/1048576).toFixed(0)+' MB ('+percent+'%).</p><progress class="'+(percent>=80?'storage-warning':'')+'" max="100" value="'+Math.min(percent,100)+'"></progress>'+(percent>=80?'<div class="error">El almacenamiento está cerca del límite. Revisa la retención y el plan antes de cargar más datos.</div>':'')+'<p class="subtle">Medición: '+date(f.storage.measured_at)+'. Los 7 días son de acceso a datos, no una garantía adicional.</p>')+
   panel('Movimientos por fecha y pedido','<div class="form-row">'+field('finance_from','Desde',financeFrom,'date',null,false)+field('finance_to','Hasta',financeTo,'date',null,false)+'</div><div class="notice">Periodo seleccionado: margen '+money(sum('margin'))+' · mi trabajo '+money(sum('own'))+' · comisiones '+money(sum('commission'))+'.</div>'+table(['Fecha','Concepto','Detalle','Pedido / referencia','Importe'],rows.map(e=>[date(e.created_at),esc(kinds[e.kind]||e.kind),esc(e.description),esc(e.reference_id?.slice(0,8)||'—'),money(e.amount_cents)])))+
@@ -241,4 +246,6 @@
  showOrder=function(id){showOrderOriginal(id);const o=S.orders.find(o=>o.id===id);if(o?.credit_cents){const info=document.createElement('div');info.className='notice';info.textContent='Saldo a favor aplicado: '+money(o.credit_cents)+' · Diferencia bancaria: '+money(o.total_cents-o.credit_cents);$('.modal')?.append(info);}};
  const paymentOriginal=handlers.payment;
  handlers.payment=id=>{paymentOriginal(id);const o=S.orders.find(o=>o.id===id);if(o?.credit_cents){const input=$('#modal-form [name=paid]');if(input)input.value=((o.total_cents-o.credit_cents)/100).toFixed(2);}};
+ const applyOriginal=applyLiveState;
+ applyLiveState=function(next){applyOriginal(next);const notification=$('.notifications-trigger');if(notification){const count=X().notifications.filter(n=>!n.read_at).length;notification.textContent='Avisos · '+count;notification.setAttribute('aria-label',count+' avisos pendientes');}};
 })();

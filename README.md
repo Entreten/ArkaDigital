@@ -23,4 +23,17 @@ Ejecutar el workflow Construir y desplegar ARKA DIGITAL. Usa RENDER_API_KEY, SUP
 
 Comandos: npm install; npm test; npm run check; npm start.
 
+## Servicios de cambios y finanzas
+- Secciones independientes para ofertas, pedidos CAM, ejecución del administrador y revisión. Solo el administrador decide los repartos y reasignaciones.
+- Cambios manuales de correo, contraseña o ambos: instrucciones por pedido y unidad, sugerencias aleatorias, validación de la contraseña común y aceptación de tarifa.
+- Las cuentas de clientes nunca entran al inventario. No hay entregas parciales ni doble pago al corregir; se acredita al confirmar la entrega completa.
+- Incidencias por unidad, sustituciones y devoluciones autorizadas al saldo del mayorista. El saldo se utiliza tanto en stock como en nuevos cambios.
+- Comisión del 3% únicamente sobre producción mensual de trabajadores, con cálculo acumulado por asignación. Incluye ajuste histórico autorizado; si falta saldo disponible se deja pendiente sin generar deudas.
+- El administrador puede producir o realizar cambios personalmente. Su margen comercial, ejecución propia, comisiones, reserva y retiros tienen movimientos separados.
+- La reserva empieza sin porcentaje configurado. Se requiere una elección explícita; no se inventan costes históricos ausentes.
+- Datos de cambios: acceso del comprador durante siete días exactos desde la entrega completa, exportación XLSX y limpieza posterior. El equipo deja de acceder al entregar.
+- Las cuentas ARKA vinculadas se actualizan sin duplicarlas ni reiniciar su vigencia. La cuenta original mantiene su garantía por duración; las reclamaciones abiertas protegen solo la cuenta afectada.
+- `database/services.sql` es aditivo y transaccional. El flujo de despliegue permite `validate`, `migrate` y `deploy`; las pruebas usan PostgreSQL aislado y navegador con datos ficticios.
+- No se modifica el mecanismo externo que mantiene activo Render, ni los recursos de audio o temas existentes.
+
 La instalación no trae cuentas streaming ni ventas ficticias. El administrador debe registrar productos, bancos, usuarios y stock.

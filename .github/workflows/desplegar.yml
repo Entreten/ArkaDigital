@@ -50,6 +50,7 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f database/schema.sql
           psql -v ON_ERROR_STOP=1 -1 -f database/services.sql
           psql -v ON_ERROR_STOP=1 -f test/services.sql
+          psql -v ON_ERROR_STOP=1 -f test/historical.sql
           psql -v ON_ERROR_STOP=1 -1 -f database/services.sql
       - run: npm install --no-save --package-lock=false --ignore-scripts playwright
       - run: npx playwright install --with-deps --only-shell chromium
