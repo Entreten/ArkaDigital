@@ -68,8 +68,7 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   allowed(req.user,['admin']);const b=req.body,price=number(b.price_cents,1),margin=number(b.margin_cents);
   if(margin>price)throw fail('Tu parte no puede superar el precio al mayorista.');
   if(b.mode!=='password'||clean(b.name,150).length<2)throw fail('Este servicio solo permite cambios de contraseña; completa el nombre.');
-  const workers=Array.isArray(b.workers)?[...new Set(b.workers)]:[];
-  for(const id of workers){const u=await one('arka_users',id);if(!['worker','admin'].includes(u.role)||!u.active||u.deleted_at)throw fail('Selecciona trabajadores activos.');}
+  const workers=[];
   const body={name:clean(b.name,150),mode:b.mode,price_cents:price,margin_cents:margin,instructions:clean(b.instructions,3000),active:b.active!==false,workers};
   res.json(await db('arka_change_offers'+(b.id?'?id=eq.'+encodeURIComponent(b.id):''),{method:b.id?'PATCH':'POST',body}));
  });
@@ -126,7 +125,7 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   const secrets=[];for(let start=0;start<activeUnitIds.length;start+=100)secrets.push(...await all('arka_change_secrets','unit_id=in.('+activeUnitIds.slice(start,start+100).join(',')+')'));
   const emailMap=new Map(secrets.map(s=>[s.unit_id,unseal(s.original_cipher)?.email||'']));
    const secretsMap=new Map(secrets.map(s=>[s.unit_id,s])),ordersMap=new Map(orders.map(o=>[o.id,o]));
-  const notifications=await all('arka_change_notifications','user_id=eq.'+user.id+'&order=created_at.desc&limit=200');
+  const notifications=await db('rpc/arka_active_notifications',{method:'POST',body:{actor:user.id}});
   const result={
    offers:await all('arka_change_offers',admin?'':'active=eq.true','id,name,mode,price_cents,margin_cents,instructions,active,workers'),
    orders:orders.map(({request_cipher,...o})=>o),

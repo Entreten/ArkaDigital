@@ -140,17 +140,15 @@
   modal('CAM-'+d.order.number+' · Cuenta '+u.position,h,null,true);
   if($('.modal'))$('.modal').dataset.changeUnit=u.id;
  }
- function eligible(o){const offer=X().offers.find(f=>f.id===o.offer_id);return S.users.filter(u=>u.active&&!u.deleted_at&&(u.role==='admin'||u.role==='worker'&&(!offer?.workers?.length||offer.workers.includes(u.id))));}
+ function eligible(o){return S.users.filter(u=>u.active&&!u.deleted_at&&['admin','worker'].includes(u.role));}
  function editOffer(o={}){
   const people=S.users.filter(u=>u.active&&!u.deleted_at&&['worker','admin'].includes(u.role));
   modal(o.id?'Editar oferta':'Nueva oferta de cambios',
    field('name','Nombre',o.name)+'<p class="notice">Servicio: solo cambio de contraseña. El correo siempre se conserva.</p>'+field('price','Precio al mayorista por cuenta (USD)',Number(o.price_cents||0)/100,'number')+field('margin','Tu parte comercial por cuenta (USD)',Number(o.margin_cents||0)/100,'number')+
    '<p class="notice">Pago de ejecución = precio − tu parte. No se aplica el 3%. Los pedidos existentes conservan sus tarifas.</p>'+
    field('instructions','Indicaciones adicionales para el equipo',o.instructions||'','textarea',null,false)+
-   '<label class="field">Personas habilitadas (opcional)<select name="workers" multiple size="5">'+people.map(u=>'<option value="'+u.id+'" '+((o.workers||[]).includes(u.id)?'selected':'')+'>'+esc(u.name)+(u.role==='admin'?' (administrador)':'')+'</option>').join('')+'</select><small>Si no seleccionas personas, puedes asignar a cualquier trabajador activo. Selecciona nombres solo si deseas restringir esta oferta. No se asigna nada automáticamente.</small></label>'+
    field('active','Oferta visible',o.active!==false,'checkbox'),async d=>{
-    const workers=[...$('#modal-form [name=workers]').selectedOptions].map(o=>o.value);
-    await api('/api/services/offers',{id:o.id,name:d.name,mode:'password',price_cents:moneyInput(d.price),margin_cents:moneyInput(d.margin),instructions:d.instructions,active:d.active,workers});await load();
+    await api('/api/services/offers',{id:o.id,name:d.name,mode:'password',price_cents:moneyInput(d.price),margin_cents:moneyInput(d.margin),instructions:d.instructions,active:d.active});await load();
    },true);
  }
  handlers['changes-offer-new']=()=>editOffer();

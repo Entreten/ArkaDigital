@@ -48,13 +48,13 @@ begin
   end if;
  elsif tg_table_name='arka_change_orders' then
   if tg_op='INSERT' then
-   perform arka_notify_admins('change_order',new.id,'Nuevo pedido de cambios de correo o contraseña.','change-created:'||new.id);
+   perform arka_notify_admins('change_order',new.id,'Nuevo pedido de cambios de contraseña.','change-created:'||new.id);
   elsif new.status='payment_review' and old.status<>'payment_review' then
    perform arka_notify_admins('change_order',new.id,'Un mayorista declaró el pago de un servicio de cambios.','change-payment:'||new.id);
   end if;
  elsif tg_table_name='arka_change_units' then
   if new.status='submitted' and old.status<>'submitted' then
-   perform arka_notify_admins('change_order',new.order_id,'Hay cambios de correo o contraseña enviados a revisión.','change-review:'||new.order_id||':'||txid_current());
+   perform arka_notify_admins('change_order',new.order_id,'Hay cambios de contraseña enviados a revisión.','change-review:'||new.order_id||':'||txid_current());
   elsif new.status='refund_requested' and old.status<>'refund_requested' then
    perform arka_notify_admins('change_order',new.order_id,'Un mayorista solicita devolución al saldo por una unidad con incidencia.','change-refund:'||new.id||':'||txid_current());
   end if;

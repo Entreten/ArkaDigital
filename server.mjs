@@ -102,11 +102,11 @@ app.post('/api/work/deadline',async(req,res)=>{
  const result=await db('rpc/arka_set_work_deadline',{method:'POST',body:{actor:req.user.id,kind:req.body.kind,target:req.body.id,new_due:due}});
  res.json(result);notifyLiveClients();
 });
-app.get('/api/notifications',async(req,res)=>res.json({notifications:await db('arka_change_notifications?user_id=eq.'+req.user.id+'&order=created_at.desc&limit=100')}));
+app.get('/api/notifications',async(req,res)=>res.json({notifications:await db('rpc/arka_active_notifications',{method:'POST',body:{actor:req.user.id}})}));
 app.post('/api/notifications/read',async(req,res)=>{
  const filter=req.body.all===true?'':'&id=eq.'+encodeURIComponent(clean(req.body.id,80));
  await db('arka_change_notifications?user_id=eq.'+req.user.id+'&read_at=is.null'+filter,{method:'PATCH',body:{read_at:new Date().toISOString()}});
- res.json({ok:true});
+ res.json({ok:true});notifyLiveClients();
 });
 app.post('/api/sales/delete-test',async(req,res)=>{
  if(req.user.role!=='admin')throw fail('Solo administrador',403);

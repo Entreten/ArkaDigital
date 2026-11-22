@@ -337,7 +337,7 @@ begin
   for x in select * from jsonb_array_elements(payload->'allocations') loop
    recipient:=(x->>'worker_id')::uuid;n:=(x->>'quantity')::int;
     if coalesce(x->>'due_at',payload->>'due_at','')='' or coalesce(x->>'due_at',payload->>'due_at')::timestamptz<=now() then raise exception 'Indica fecha y hora máximas futuras para cada asignación';end if;
-   if n<1 or not exists(select 1 from arka_users where id=recipient and active and deleted_at is null and (role='admin' or (role='worker' and (coalesce(cardinality(offer.workers),0)=0 or id=any(offer.workers))))) then raise exception 'Elige un trabajador activo habilitado para esta oferta o a ti mismo';end if;
+    if n<1 or not exists(select 1 from arka_users where id=recipient and active and deleted_at is null and role in('admin','worker')) then raise exception 'Elige un trabajador activo o a ti mismo';end if;
    if exists(select 1 from arka_change_units where order_id=oid and worker_id=recipient and status in('assigned','rejected') and accepted_at is not null) and coalesce((payload->>'reassign')::boolean,false) then null;end if;
    with chosen as(select id from arka_change_units where order_id=oid and
     ((not coalesce((payload->>'reassign')::boolean,false) and status='pending') or
