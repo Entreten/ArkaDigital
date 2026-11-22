@@ -73,6 +73,7 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
    const request={pattern:clean(payload.pattern,320).toLowerCase(),fixed_password:String(payload.fixed_password||'').slice(0,500)};
    if(offer.mode!=='password'&&!emailValid(request.pattern))throw fail('Indica el ejemplo de correo de un dominio que puedas utilizar.');
    const inputs=Array.isArray(payload.accounts)?payload.accounts:parseAccounts(payload.text);
+   if(inputs.some(input=>input.linked_account_id))throw fail('Este servicio solo acepta cuentas ingresadas manualmente; no se vincula a compras anteriores.');
    if(!inputs.length||inputs.length>1000)throw fail('Carga entre 1 y 1000 cuentas.');
    const accounts=[],seen=new Set();for(const input of inputs){const a=await prepareAccount(req.user,input,request,offer.mode);if(seen.has(a.fingerprint))throw fail('Hay cuentas de origen duplicadas.');seen.add(a.fingerprint);accounts.push(a);}
    payload={offer_id:offer.id,accounts,request_cipher:seal(request),acknowledged:payload.acknowledged===true};
@@ -115,7 +116,7 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
    offers:await all('arka_change_offers',admin?'':'active=eq.true','id,name,mode,price_cents,margin_cents,instructions,active,workers'),
    orders:orders.map(({request_cipher,...o})=>o),
    units:units.map(({source_fingerprint,result_fingerprint,...unit})=>({...unit,email:emailMap.get(unit.id)||''})),
-   notifications:notifications.filter(n=>permittedOrders.has(n.order_id)),
+   notifications,
    wallet:buyer?await all('arka_wallet','buyer_id=eq.'+user.id+'&order=created_at.desc'):[],
    credit_cents:buyer?(await one('arka_users',user.id)).credit_cents:0
   };

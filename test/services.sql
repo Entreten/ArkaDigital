@@ -54,9 +54,9 @@ begin
  exception when raise_exception then if sqlerrm like 'TEST:%' then raise;end if;end;
  perform arka_changes(admin,'accept',jsonb_build_object('id',uid2));
  perform arka_changes(admin,'submit',jsonb_build_object('id',uid2,'cipher','result2','fingerprint','resultfp2'));
- perform arka_changes(admin,'approve',jsonb_build_object('id',uid2));
  perform pg_temp.assert_ok((select balance_cents=before_balance from arka_users where id=worker),'no service credit before complete delivery');
- perform arka_changes(admin,'deliver',jsonb_build_object('id',oid));
+ perform arka_changes(admin,'approve',jsonb_build_object('id',uid2));
+ perform pg_temp.assert_ok((select status='delivered' from arka_change_orders where id=oid),'last approval auto-delivers the full order');
  perform pg_temp.assert_ok((select balance_cents=before_balance+20 from arka_users where id=worker),'service pays 20 without 3 percent');
  perform pg_temp.assert_ok((select sum(amount_cents)=20 from arka_finance where kind='own'),'admin own labor paid separately');
  perform pg_temp.assert_ok((select sum(amount_cents)=10 from arka_finance where event_key='change-margin:'||oid),'commercial part for both units');
@@ -69,7 +69,7 @@ begin
  result:=arka_changes(buyer,'create',jsonb_build_object('offer_id',offer,'acknowledged',true,'request_cipher','r',
  'accounts',jsonb_build_array(jsonb_build_object('cipher','c','fingerprint','refund1','suggestion_cipher','s'))));
  oid:=(result->>'id')::uuid;select id into uid from arka_change_units where order_id=oid;
- update arka_change_offers set price_cents=100,margin_cents=50 where id=offer;
+ update arka_change_offers set price_cents=100,margin_cents=50,workers='{}' where id=offer;
  perform arka_changes(buyer,'payment',jsonb_build_object('id',oid,'bank_id',bank,'sender','TEST','transaction_code','code2','payment_date',current_date,'paid_cents',25));
  perform arka_changes(admin,'verify_payment',jsonb_build_object('id',oid));
  perform arka_changes(admin,'assign',jsonb_build_object('id',oid,'allocations',jsonb_build_array(jsonb_build_object('worker_id',worker,'quantity',1))));
@@ -79,7 +79,7 @@ begin
  perform arka_changes(buyer,'refund_request',jsonb_build_object('id',uid));
  perform arka_changes(admin,'refund_approve',jsonb_build_object('id',uid));
  perform pg_temp.assert_ok((select credit_cents=25 from arka_users where id=buyer),'exact refund to wallet');
- perform arka_changes(admin,'deliver',jsonb_build_object('id',oid));
+ perform pg_temp.assert_ok((select status='delivered' from arka_change_orders where id=oid),'last cancellation auto-completes refunded order');
  perform pg_temp.assert_ok((select balance_cents=before_balance+20 from arka_users where id=worker),'cancelled work never paid');
  result:=arka_command(buyer,'checkout',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('product_id',product,'quantity',1))));
  perform pg_temp.assert_ok((select status='delivered' and credit_cents=25 and paid_cents=0 from arka_orders where id=(result->>'id')::uuid),'wallet fully pays and delivers stock');

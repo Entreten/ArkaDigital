@@ -269,6 +269,7 @@ begin
   update arka_change_orders set instructions=offer.instructions where id=oid;
   for x in select * from jsonb_array_elements(payload->'accounts') loop
    n:=n+1;
+   if x->>'linked_account_id' is not null then raise exception 'Los servicios de cambios no se vinculan a compras anteriores; ingresa las cuentas manualmente';end if;
    if x->>'linked_account_id' is not null then
     perform 1 from arka_accounts where id=(x->>'linked_account_id')::uuid for update;
     if not exists(select 1 from arka_accounts a join arka_products p on p.id=a.product_id where a.id=(x->>'linked_account_id')::uuid and a.buyer_id=actor and a.status='sold' and p.mode='duration' and a.expires_at>now()) then raise exception 'La cuenta vinculada no es tuya o ya venció';end if;
@@ -320,7 +321,7 @@ begin
   select * into offer from arka_change_offers where id=o.offer_id;
   for x in select * from jsonb_array_elements(payload->'allocations') loop
    recipient:=(x->>'worker_id')::uuid;n:=(x->>'quantity')::int;
-   if n<1 or not exists(select 1 from arka_users where id=recipient and active and deleted_at is null and (role='admin' or (role='worker' and id=any(offer.workers)))) then raise exception 'Elige un trabajador habilitado para esta oferta o a ti mismo';end if;
+   if n<1 or not exists(select 1 from arka_users where id=recipient and active and deleted_at is null and (role='admin' or (role='worker' and (coalesce(cardinality(offer.workers),0)=0 or id=any(offer.workers))))) then raise exception 'Elige un trabajador activo habilitado para esta oferta o a ti mismo';end if;
    if exists(select 1 from arka_change_units where order_id=oid and worker_id=recipient and status in('assigned','rejected') and accepted_at is not null) and coalesce((payload->>'reassign')::boolean,false) then null;end if;
    with chosen as(select id from arka_change_units where order_id=oid and
     ((not coalesce((payload->>'reassign')::boolean,false) and status='pending') or
@@ -401,6 +402,11 @@ begin
   else raise exception 'Operación no válida';end if;
  end if;
  insert into arka_change_history(order_id,unit_id,actor_id,action) values(oid,unit.id,actor,action);
+ if action in('approve','refund_approve') and u.role='admin'
+  and exists(select 1 from arka_change_orders where id=oid and status='processing')
+  and not exists(select 1 from arka_change_units where order_id=oid and (status not in('approved','cancelled') or (status='cancelled' and refunded_at is null))) then
+  return arka_changes(actor,'deliver',jsonb_build_object('id',oid));
+ end if;
  return jsonb_build_object('ok',true,'id',oid);
 end $$;
 

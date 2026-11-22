@@ -5,7 +5,7 @@ on:
       phase:
         description: Verificar, preparar base o publicar
         type: choice
-        options: [validate, migrate, deploy, runtime]
+        options: [validate, migrate, deploy, runtime, cleanup]
         default: validate
 permissions:
   contents: read
@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: inputs.phase != 'runtime'
+    if: inputs.phase != 'runtime' && inputs.phase != 'cleanup'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     services:
@@ -50,9 +50,13 @@ jobs:
           psql -v ON_ERROR_STOP=1 -c 'create role anon; create role authenticated; create role service_role;'
           psql -v ON_ERROR_STOP=1 -1 -f database/schema.sql
           psql -v ON_ERROR_STOP=1 -1 -f database/services.sql
+          psql -v ON_ERROR_STOP=1 -1 -f database/notifications.sql
+          psql -v ON_ERROR_STOP=1 -1 -f database/sales-cleanup.sql
           psql -v ON_ERROR_STOP=1 -f test/services.sql
+          psql -v ON_ERROR_STOP=1 -f test/notifications.sql
           psql -v ON_ERROR_STOP=1 -f test/historical.sql
           psql -v ON_ERROR_STOP=1 -1 -f database/services.sql
+          psql -v ON_ERROR_STOP=1 -f test/cleanup-history.sql
       - run: npm install --no-save --package-lock=false --ignore-scripts playwright
       - run: npx playwright install --with-deps --only-shell chromium
       - name: Probar pantallas en escritorio y móvil sin datos reales
@@ -82,3 +86,16 @@ jobs:
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
         run: node scripts/verify-runtime.mjs
+  cleanup:
+    if: inputs.phase == 'cleanup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Retirar solo las pruebas confirmadas y preservar la compra oficial
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/cleanup-test-purchases.mjs

@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node server.mjs",
     "test": "node --test test/*.test.mjs",
-    "check": "node --check server.mjs && node --check services.mjs && node --check public/app.js && node --check public/services.js && node --check scripts/deploy.mjs"
+    "check": "node --check server.mjs && node --check services.mjs && node --check public/app.js && node --check public/services.js && node --check public/purchases.js && node --check public/notifications.js && node --check scripts/deploy.mjs"
   },
   "dependencies": {
     "express": "^5.1.0",

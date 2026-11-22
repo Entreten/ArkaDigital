@@ -32,8 +32,12 @@ Comandos: npm install; npm test; npm run check; npm start.
 - El administrador puede producir o realizar cambios personalmente. Su margen comercial, ejecución propia, comisiones, reserva y retiros tienen movimientos separados.
 - La reserva empieza sin porcentaje configurado. Se requiere una elección explícita; no se inventan costes históricos ausentes.
 - Datos de cambios: acceso del comprador durante siete días exactos desde la entrega completa, exportación XLSX y limpieza posterior. El equipo deja de acceder al entregar.
-- Las cuentas ARKA vinculadas se actualizan sin duplicarlas ni reiniciar su vigencia. La cuenta original mantiene su garantía por duración; las reclamaciones abiertas protegen solo la cuenta afectada.
+- Los servicios nuevos de cambios solo aceptan cuentas ingresadas manualmente. No hay selector ni vinculación automática con compras anteriores.
 - `database/services.sql` es aditivo y transaccional. El flujo de despliegue permite `validate`, `migrate` y `deploy`; las pruebas usan PostgreSQL aislado y navegador con datos ficticios.
 - No se modifica el mecanismo externo que mantiene activo Render, ni los recursos de audio o temas existentes.
+- La aprobación de la última unidad completa automáticamente el servicio y acredita una sola vez las ganancias. Sin restricciones explícitas en la oferta, el administrador puede asignar a cualquier trabajador activo.
+- Las compras entregadas muestran todas las credenciales del producto juntas, con copia por campo, cuenta y lote filtrado.
+- Los avisos privados cubren pedidos, pagos, asignaciones, producción, garantías y derivaciones. El sonido requiere activación del usuario; se conserva el canal en pestañas en segundo plano.
+- El administrador puede retirar una venta de prueba con confirmación y copia privada de recuperación. No se revierten silenciosamente pagos laborales ni se devuelven cuentas usadas al stock.
 
 La instalación no trae cuentas streaming ni ventas ficticias. El administrador debe registrar productos, bancos, usuarios y stock.

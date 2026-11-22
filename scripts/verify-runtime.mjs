@@ -2,7 +2,7 @@ import {randomUUID,randomBytes,scryptSync} from 'node:crypto';
 const url='https://arka-digital.onrender.com',wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let ready=false;
 for(let i=0;i<60;i++){
- try{const r=await fetch(url+'/healthz',{signal:AbortSignal.timeout(15000)}),h=await r.json();if(r.ok&&h.release==='services-20261122'&&(!process.env.GITHUB_SHA||h.commit===process.env.GITHUB_SHA)){ready=true;break;}}catch{}
+ try{const r=await fetch(url+'/healthz',{signal:AbortSignal.timeout(15000)}),h=await r.json();if(r.ok&&h.release==='purchases-notifications-20261122'&&(!process.env.GITHUB_SHA||h.commit===process.env.GITHUB_SHA)){ready=true;break;}}catch{}
  await wait(10000);
 }
 if(!ready)throw Error('Render aún no sirve la revisión esperada. No se afirma que esté publicada.');
@@ -26,7 +26,7 @@ try{
   if(user.role!=='admin'&&state.services.orders.length)throw Error('Una cuenta nueva recibió pedidos ajenos');
  }
  const guest=await fetch(url+'/api/services/state');if(guest.status!==401)throw Error('La API de servicios no está protegida');
- for(const file of ['/services.js?v=20261122-1','/services.css?v=20261122-1'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
+ for(const file of ['/services.js?v=20261122-2','/services.css?v=20261122-2','/purchases.js?v=20261122-2','/notifications.js?v=20261122-2'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
  console.log('RENDER_RUNTIME_OK: revisión publicada; salud de base de datos, sesiones de tres roles, finanzas y recursos nuevos verificados.');
 }finally{
  await sql('delete from arka_users where id in('+users.map(u=>quote(u.id)).join(',')+') and email like '+quote('qa_release_%_'+tag+'@example.invalid'));

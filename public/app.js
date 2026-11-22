@@ -124,7 +124,7 @@ async function refreshOpenDetail(){if(!modalDetail||$('#modal-form')||detailRefr
 document.addEventListener('input',event=>{const form=event.target.closest('#upload-form');if(form)form.dataset.syncDirty='true';});
 document.addEventListener('change',event=>{const form=event.target.closest('#upload-form');if(form)form.dataset.syncDirty='true';});
 function resumeLiveSync(){if(!S||document.hidden)return;ensureLiveEvents();flushLiveQueue();queueLiveSync(50);}
-document.addEventListener('visibilitychange',()=>{if(document.hidden){liveEvents?.close();liveEvents=null;clearTimeout(liveTimer);liveTimer=null;}else resumeLiveSync();});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){clearTimeout(liveTimer);liveTimer=null;}else resumeLiveSync();});
 window.addEventListener('focus',resumeLiveSync);window.addEventListener('online',resumeLiveSync);window.addEventListener('pagehide',()=>{liveEvents?.close();liveEvents=null;});
 
 (async()=>{try{const publicSettings=await api('/api/public');theme(publicSettings.theme);await api('/api/me');await load();}catch{login();}})();

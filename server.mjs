@@ -37,7 +37,7 @@ function verifyPassword(password,hash){try{const[s,h]=hash.split(':'),actual=scr
 const sign=body=>createHmac('sha256',process.env.SESSION_SECRET).update(body).digest('base64url');
 function session(u){const body=Buffer.from(JSON.stringify({id:u.id,v:u.auth_version,exp:Date.now()+12*3600000})).toString('base64url');return body+'.'+sign(body);}
 app.use('/api',async(req,res,next)=>{res.setHeader('Cache-Control','no-store');if(!['GET','HEAD','OPTIONS'].includes(req.method)){const origin=req.get('origin');if(origin&&origin!==req.protocol+'://'+req.get('host'))return res.status(403).json({error:'Origen no permitido'});}const raw=(req.headers.cookie||'').split(';').map(x=>x.trim()).find(x=>x.startsWith('arka_session='))?.slice(13);if(raw){try{const[body,sig]=raw.split('.');if(sig&&sig.length===sign(body).length&&timingSafeEqual(Buffer.from(sig),Buffer.from(sign(body)))){const token=JSON.parse(Buffer.from(body,'base64url'));if(token.exp>Date.now()){const rows=await db('arka_users?id=eq.'+encodeURIComponent(token.id)+'&limit=1');const u=rows[0];if(u?.active&&!u.deleted_at&&u.auth_version===token.v)req.user=u;}}}catch{}}next();});
-app.get('/healthz',async(req,res)=>{try{await db('arka_settings?select=id&limit=1');res.json({status:'ok',service:'ARKA DIGITAL',release:'services-20261122',commit:process.env.RENDER_GIT_COMMIT||null});}catch{res.status(503).json({status:'unavailable'});}});
+app.get('/healthz',async(req,res)=>{try{await db('arka_settings?select=id&limit=1');res.json({status:'ok',service:'ARKA DIGITAL',release:'purchases-notifications-20261122',commit:process.env.RENDER_GIT_COMMIT||null});}catch{res.status(503).json({status:'unavailable'});}});
 app.get('/api/public',async(req,res)=>{const [s]=await db('arka_settings?id=eq.1');res.json({theme:s.theme,support:s.support});});
 app.post('/api/login',loginLimiter,async(req,res)=>{const email=clean(req.body.email,320).toLowerCase(),password=String(req.body.password||'').slice(0,200);const[u]=await db('arka_users?email=eq.'+encodeURIComponent(email)+'&limit=1');if(!u?.active||u.deleted_at||!verifyPassword(password,u.password_hash))throw fail('Correo o contraseña incorrectos',401);res.cookie('arka_session',session(u),{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',maxAge:12*3600000,path:'/'});res.json({user:safeUser(u)});});
 app.post('/api/logout',(req,res)=>{res.clearCookie('arka_session',{path:'/'});res.json({ok:true});});
@@ -55,7 +55,25 @@ app.get('/api/state',async(req,res)=>{const u=req.user,admin=u.role==='admin',wo
  const stocks=await db('rpc/arka_stock',{method:'POST',body:{}});const orderIds=orders.map(o=>o.id);const items=orderIds.length?await all('arka_items','order_id=in.('+orderIds.join(',')+')'):[];
  res.json({user:safeUser(u),settings:settings[0],products,banks:worker?[]:banks,users,assignments,accounts:accounts.map(({cipher,...account})=>({...account,...(admin||worker?{email:cipher?unseal(cipher)?.email||'':''}:{})})),orders,items,reports,withdrawals,ledger,stocks,services:await services.state(u)});});
 
-app.get('/api/orders/:id/accounts',async(req,res)=>{if(!['admin','wholesale'].includes(req.user.role))throw fail('Acceso denegado',403);const[order]=await db('arka_orders?id=eq.'+encodeURIComponent(req.params.id)+'&select=id,buyer_id,status&limit=1');if(!order)throw fail('Pedido no encontrado',404);if(req.user.role!=='admin'&&order.buyer_id!==req.user.id)throw fail('Acceso denegado',403);if(order.status!=='delivered')throw fail('Las cuentas estarán disponibles cuando se apruebe y entregue el pedido');const productId=clean(req.query.product_id,100);if(!productId)throw fail('Selecciona el producto de esta compra');const rows=await all('arka_accounts','order_id=eq.'+encodeURIComponent(order.id)+'&product_id=eq.'+encodeURIComponent(productId)+'&status=in.(sold,purged)','id,product_id,worker_id,assignment_id,status,reason,paid,order_id,buyer_id,created_at,approved_at,delivered_at,expires_at,confirmed_at,purged_at,cipher');res.json({accounts:rows.map(({cipher,...account})=>({...account,email:cipher?unseal(cipher)?.email||'':''}))});});
+app.get('/api/orders/:id/accounts',async(req,res)=>{
+ if(!['admin','wholesale'].includes(req.user.role))throw fail('Acceso denegado',403);
+ const[order]=await db('arka_orders?id=eq.'+encodeURIComponent(req.params.id)+'&select=id,buyer_id,status&limit=1');
+ if(!order)throw fail('Pedido no encontrado',404);
+ if(req.user.role!=='admin'&&order.buyer_id!==req.user.id)throw fail('Acceso denegado',403);
+ if(order.status!=='delivered')throw fail('Las cuentas estarán disponibles cuando se apruebe y entregue el pedido');
+ const productId=clean(req.query.product_id,100);if(!productId)throw fail('Selecciona el producto de esta compra');
+ const [rows,products,reports]=await Promise.all([
+  all('arka_accounts','order_id=eq.'+encodeURIComponent(order.id)+'&product_id=eq.'+encodeURIComponent(productId)+'&status=in.(sold,purged)','id,product_id,worker_id,assignment_id,status,reason,paid,order_id,buyer_id,created_at,approved_at,delivered_at,expires_at,confirmed_at,purged_at,cipher'),
+  db('arka_products?id=eq.'+encodeURIComponent(productId)+'&select=mode&limit=1'),
+  all('arka_reports','buyer_id=eq.'+order.buyer_id+'&status=in.(open,escalated)','account_id')
+ ]);
+ const protectedIds=new Set(reports.map(r=>r.account_id)),now=Date.now();
+ res.json({accounts:rows.map(({cipher,...account})=>{
+  const deadline=products[0]?.mode==='domain'?new Date(account.delivered_at).getTime()+7*86400000:new Date(account.expires_at).getTime();
+  const data=cipher&&(deadline>now||protectedIds.has(account.id))?unseal(cipher):null;
+  return {...account,email:data?.email||'',data};
+ })});
+});
 app.get('/api/accounts/:id',async(req,res)=>{const[a]=await db('arka_accounts?id=eq.'+encodeURIComponent(req.params.id)+'&limit=1');if(!a)throw fail('Cuenta no encontrada',404);const u=req.user;if(u.role!=='admin'&&a.worker_id!==u.id&&a.buyer_id!==u.id)throw fail('Acceso denegado',403);res.json({id:a.id,data:await visibleAccountData(a),status:a.status});});
 app.get('/api/accounts/:id/history',async(req,res)=>{if(req.user.role!=='admin')throw fail('Acceso denegado',403);const rows=await all('arka_events','account_id=eq.'+encodeURIComponent(req.params.id)+'&order=created_at.desc');res.json(rows.map(e=>({...e,previous_cipher:undefined,previous:unseal(e.previous_cipher)})));});
 app.post('/api/command',async(req,res)=>{const action=clean(req.body.action,50),payload={...req.body.payload};const allowed=['accept_assignment','submit_accounts','resubmit','review_account','checkout','payment','approve_order','reject_order','cancel_order','confirm_account','report','resolve_report','withdraw','process_withdrawal','credit'];if(!allowed.includes(action))throw fail('Operación desconocida');
@@ -77,6 +95,17 @@ app.post('/api/admin/:kind',async(req,res)=>{if(req.user.role!=='admin')throw fa
 app.post('/api/password',async(req,res)=>{if(!verifyPassword(String(req.body.current||''),req.user.password_hash))throw fail('La contraseña actual no coincide');await db('arka_users?id=eq.'+req.user.id,{method:'PATCH',body:{password_hash:hashPassword(req.body.password),auth_version:req.user.auth_version+1}});res.clearCookie('arka_session',{path:'/'});res.json({ok:true});});
 app.use('/api/services',(req,res,next)=>{if(req.method==='POST')res.once('finish',()=>{if(res.statusCode>=200&&res.statusCode<300)notifyLiveClients();});next();});
 const services=installServices(app,{db,all,seal,unseal,accountInput,fail,clean,number});
+app.get('/api/notifications',async(req,res)=>res.json({notifications:await db('arka_change_notifications?user_id=eq.'+req.user.id+'&order=created_at.desc&limit=100')}));
+app.post('/api/notifications/read',async(req,res)=>{
+ const filter=req.body.all===true?'':'&id=eq.'+encodeURIComponent(clean(req.body.id,80));
+ await db('arka_change_notifications?user_id=eq.'+req.user.id+'&read_at=is.null'+filter,{method:'PATCH',body:{read_at:new Date().toISOString()}});
+ res.json({ok:true});
+});
+app.post('/api/sales/delete-test',async(req,res)=>{
+ if(req.user.role!=='admin')throw fail('Solo administrador',403);
+ const result=await db('rpc/arka_delete_test_sale',{method:'POST',body:{actor:req.user.id,target:req.body.id,confirmation:req.body.confirmation}});
+ res.json(result);notifyLiveClients();
+});
 app.use(express.static(path.join(root,'public'),{maxAge:process.env.NODE_ENV==='production'?'1h':0,etag:true,setHeaders:(res,file)=>{if(file.endsWith('index.html'))res.setHeader('Cache-Control','no-store');}}));app.get('/',(req,res)=>res.sendFile(path.join(root,'public/index.html')));
 app.use((error,req,res,next)=>{if(error.type==='entity.parse.failed')return res.status(400).json({error:'Formato no válido'});res.status(error.status||500).json({error:error.status?error.message:'Ocurrió un error. Inténtalo nuevamente.'});});
 const maintenance=()=>Promise.all([db('rpc/arka_maintenance',{method:'POST',body:{}}),services.maintenance()]).catch(()=>console.error('Mantenimiento pendiente; se reintentará.'));

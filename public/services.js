@@ -90,7 +90,7 @@
    panel('Tu producción',accountsTable(S.accounts.filter(a=>a.worker_id===S.user.id),true));
  }
  async function change(action,payload,reopen){
-  await api('/api/services/command',{action,payload});await load();closeModal();toast('Operación guardada correctamente');if(reopen)await showOrderChanges(reopen);
+  await api('/api/services/command',{action,payload});await load();closeModal();toast('Operación guardada correctamente');if(reopen)setTimeout(()=>{if(S&&orderBy(reopen))void showOrderChanges(reopen);},0);
  }
  async function showOrderChanges(id){
   const o=orderBy(id);if(!o)return;const admin=role()==='admin',workerView=view==='changes-work'||role()==='worker',rows=unitRows(o).filter(u=>!workerView||u.worker_id===S.user.id),paid=o.total_cents-o.credit_cents;
@@ -103,7 +103,7 @@
   if(admin&&o.status==='processing'){
    h+='<div class="row-actions">'+click('Asignar pendientes','assign',id)+click('Repartir entre los que yo elija','split',id)+'</div>';
    const ready=unitRows(o).every(u=>u.status==='approved'||u.status==='cancelled'&&u.refunded_at);
-   h+='<button class="primary" data-action="changes-deliver" data-id="'+id+'" '+(!ready?'disabled':'')+'>Confirmar y entregar pedido completo</button>';
+   h+='<p class="notice">La entrega y el reparto de ganancias se realizan automáticamente al aprobar la última unidad, siempre que las canceladas ya tengan su devolución registrada.</p>'+(ready?click('Completar entrega pendiente','deliver',id,'primary'):'');
    h+=table(['Responsable','Asignadas','Aprobadas'],[...new Set(unitRows(o).map(u=>u.worker_id).filter(Boolean))].map(w=>[esc(nameOf(w)),unitRows(o).filter(u=>u.worker_id===w).length,unitRows(o).filter(u=>u.worker_id===w&&u.status==='approved').length]));
   }
   if(o.status==='delivered'){
@@ -118,7 +118,7 @@
     if(role()==='wholesale'&&['blocked','refund_requested'].includes(u.status))actions+=click('Responder incidencia','unit',u.id);
     if(admin&&['assigned','rejected'].includes(u.status))actions+=click('Reasignar','reassign',u.id);
    }else if(o.status==='delivered'&&role()==='wholesale'&&u.status!=='cancelled'&&new Date(o.access_until)>new Date()&&!o.purged_at)actions=click('Ver resultado','unit',u.id);
-   return ['#'+u.position+(u.email?'<br>'+esc(u.email):'')+(u.reason?'<br><span class="muted">'+esc(u.reason)+'</span>':''),status(u.status),...(admin?[esc(u.worker_id?nameOf(u.worker_id):'Sin asignar')]:[]),actions||'—'];
+   return ['#'+u.position+(u.email?'<br>'+esc(u.email):'')+(u.reason?'<br><span class="muted">'+esc(u.reason)+'</span>':''),u.status==='pending'?'<span class="badge">Sin asignar</span>':status(u.status),...(admin?[esc(u.worker_id?nameOf(u.worker_id):'Sin asignar')]:[]),actions||'—'];
   }));
   if(admin){const history=(X().history||[]).filter(e=>e.order_id===id).sort((a,b)=>b.created_at.localeCompare(a.created_at));h+=panel('Historial administrativo',table(['Fecha','Acción','Responsable'],history.map(e=>[date(e.created_at),esc(e.action),esc(nameOf(e.actor_id))])));}
   h+='<div class="row-actions">'+click('Actualizar pedido','order',id)+'</div>';modal('CAM-'+o.number,h,null,true);
@@ -136,15 +136,16 @@
    if(role()==='admin'&&['blocked','refund_requested'].includes(u.status))h+='<div class="row-actions">'+click('Cancelar unidad y devolver '+money(d.order.unit_cents),'refund-approve',id,'danger small')+(u.status==='refund_requested'?click('Rechazar solicitud con motivo','refund-reject',id):'')+'</div>';
   }
   modal('CAM-'+d.order.number+' · Cuenta '+u.position,h,null,true);
+  if($('.modal'))$('.modal').dataset.changeUnit=u.id;
  }
- function eligible(o){const offer=X().offers.find(f=>f.id===o.offer_id);return S.users.filter(u=>u.active&&!u.deleted_at&&(u.role==='admin'||u.role==='worker'&&offer?.workers.includes(u.id)));}
+ function eligible(o){const offer=X().offers.find(f=>f.id===o.offer_id);return S.users.filter(u=>u.active&&!u.deleted_at&&(u.role==='admin'||u.role==='worker'&&(!offer?.workers?.length||offer.workers.includes(u.id))));}
  function editOffer(o={}){
   const people=S.users.filter(u=>u.active&&!u.deleted_at&&['worker','admin'].includes(u.role));
   modal(o.id?'Editar oferta':'Nueva oferta de cambios',
    field('name','Nombre',o.name)+field('mode','Modalidad',o.mode||'email','select',Object.entries(modes))+field('price','Precio al mayorista por cuenta (USD)',Number(o.price_cents||0)/100,'number')+field('margin','Tu parte comercial por cuenta (USD)',Number(o.margin_cents||0)/100,'number')+
    '<p class="notice">Pago de ejecución = precio − tu parte. No se aplica el 3%. Los pedidos existentes conservan sus tarifas.</p>'+
    field('instructions','Indicaciones adicionales para el equipo',o.instructions||'','textarea',null,false)+
-   '<label class="field">Personas habilitadas<select name="workers" multiple size="5">'+people.map(u=>'<option value="'+u.id+'" '+((o.workers||[]).includes(u.id)?'selected':'')+'>'+esc(u.name)+(u.role==='admin'?' (administrador)':'')+'</option>').join('')+'</select><small>Esto habilita personas; no asigna automáticamente ningún trabajo.</small></label>'+
+   '<label class="field">Personas habilitadas (opcional)<select name="workers" multiple size="5">'+people.map(u=>'<option value="'+u.id+'" '+((o.workers||[]).includes(u.id)?'selected':'')+'>'+esc(u.name)+(u.role==='admin'?' (administrador)':'')+'</option>').join('')+'</select><small>Si no seleccionas personas, puedes asignar a cualquier trabajador activo. Selecciona nombres solo si deseas restringir esta oferta. No se asigna nada automáticamente.</small></label>'+
    field('active','Oferta visible',o.active!==false,'checkbox'),async d=>{
     const workers=[...$('#modal-form [name=workers]').selectedOptions].map(o=>o.value);
     await api('/api/services/offers',{id:o.id,name:d.name,mode:d.mode,price_cents:moneyInput(d.price),margin_cents:moneyInput(d.margin),instructions:d.instructions,active:d.active,workers});await load();
@@ -157,17 +158,13 @@
  handlers['changes-unit']=showUnit;
  handlers['changes-buy']=id=>{
   const offer=X().offers.find(o=>o.id===id);
-  const options=S.accounts.filter(a=>a.status==='sold'&&new Date(a.expires_at)>new Date()&&S.products.find(p=>p.id===a.product_id)?.mode==='duration');
   modal('Solicitar '+esc(offer.name),'<div class="notice">'+money(offer.price_cents)+' por cuenta. El saldo a favor se aplicará automáticamente. No incluye reactivación de suscripciones ni creación de buzones.</div>'+
-   field('text','Cuentas externas o pegadas: una por línea, correo|contraseña','','textarea',null,false)+
-   '<label class="field">O selecciona cuentas compradas en ARKA (puedes combinar ambas cargas)<select name="linked" multiple size="5">'+options.map(a=>'<option value="'+a.id+'">'+esc(pname(a.product_id))+' · '+a.id.slice(0,8)+' · '+date(a.delivered_at)+'</option>').join('')+'</select></label>'+
+   field('text','Ingresa las cuentas a modificar: una por línea, correo|contraseña','','textarea')+
    (offer.mode!=='password'?field('pattern','Correo de ejemplo y dominio que puedes utilizar (ej. juan@tudominio.com)','','email'):'')+
    (offer.mode!=='email'?field('fixed_password','Contraseña común solicitada (vacía = generar una diferente por cuenta)','','text',null,false):'')+
    field('acknowledged','Confirmo que son cuentas propias o autorizadas, accesibles y con suscripción vigente cuando sea necesaria',false,'checkbox'),async d=>{
-    const linked=[...$('#modal-form [name=linked]').selectedOptions].map(o=>({linked_account_id:o.value}));
-    let accounts=linked;
-    if(d.text.trim()){const rows=d.text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);accounts=[...rows.map((l,i)=>{const sep=l.includes('|')?'|':'\t',at=l.indexOf(sep);if(at<0)throw Error('Línea '+(i+1)+': usa correo|contraseña.');return{email:l.slice(0,at).trim(),password:l.slice(at+1).trim()};}),...linked];}
-    if(!accounts.length)throw Error('Pega cuentas o selecciona productos de ARKA.');
+    const accounts=d.text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map((l,i)=>{const sep=l.includes('|')?'|':'\t',at=l.indexOf(sep);if(at<0)throw Error('Línea '+(i+1)+': usa correo|contraseña.');return{email:l.slice(0,at).trim(),password:l.slice(at+1).trim()};});
+    if(!accounts.length)throw Error('Ingresa las cuentas que deseas modificar.');
     const total=accounts.length*offer.price_cents,credit=Math.min(total,Number(X().credit_cents));
     if(!confirm(accounts.length+' cuentas · Total '+money(total)+' · Saldo aplicado '+money(credit)+' · Diferencia a transferir '+money(total-credit)+'. ¿Confirmas el pedido?'))return;
     await api('/api/services/command',{action:'create',payload:{offer_id:id,accounts,pattern:d.pattern||'',fixed_password:d.fixed_password||'',acknowledged:d.acknowledged}});view='changes-orders';await load();
@@ -247,5 +244,5 @@
  const paymentOriginal=handlers.payment;
  handlers.payment=id=>{paymentOriginal(id);const o=S.orders.find(o=>o.id===id);if(o?.credit_cents){const input=$('#modal-form [name=paid]');if(input)input.value=((o.total_cents-o.credit_cents)/100).toFixed(2);}};
  const applyOriginal=applyLiveState;
- applyLiveState=function(next){applyOriginal(next);const notification=$('.notifications-trigger');if(notification){const count=X().notifications.filter(n=>!n.read_at).length;notification.textContent='Avisos · '+count;notification.setAttribute('aria-label',count+' avisos pendientes');}};
+ applyLiveState=function(next){applyOriginal(next);const shown=$('.modal')?.dataset.changeUnit;if(shown&&role()!=='wholesale'){const unit=X().units.find(u=>u.id===shown),order=unit?orderBy(unit.order_id):null;if(!unit||order?.status!=='processing')closeModal();}const notification=$('.notifications-trigger');if(notification){const count=X().notifications.filter(n=>!n.read_at).length;notification.textContent='Avisos · '+count;notification.setAttribute('aria-label',count+' avisos pendientes');}};
 })();
