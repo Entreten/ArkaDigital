@@ -71,3 +71,39 @@ grant execute on function arka_edit_assignment(uuid,text,uuid,text,jsonb) to ser
 -- Search all of one buyer's folders without fetching or decrypting credentials.
 create index if not exists arka_account_buyer_email on arka_accounts(buyer_id,email_fingerprint);
 notify pgrst,'reload schema';
+-- Corrections never rewrite earned wages, commissions or withdrawal reservations.
+create table if not exists arka_worker_balance_adjustments(
+ id uuid primary key,actor_id uuid not null references arka_users(id),worker_id uuid not null references arka_users(id),
+ before_cents bigint not null,after_cents bigint not null,reserved_cents bigint not null,
+ reason text not null,created_at timestamptz not null default now(),
+ check(after_cents>=reserved_cents and reserved_cents>=0),check(before_cents<>after_cents));
+alter table arka_worker_balance_adjustments enable row level security;
+revoke all on arka_worker_balance_adjustments from public,anon,authenticated;
+grant all on arka_worker_balance_adjustments to service_role;
+create or replace function arka_correct_worker_balance(actor uuid,worker uuid,new_total bigint,expected_total bigint,reason text,request_id uuid)
+returns jsonb language plpgsql security definer set search_path=public as $$
+declare u arka_users;previous arka_worker_balance_adjustments;delta bigint;begin
+ if not exists(select 1 from arka_users where id=actor and role='admin' and active and deleted_at is null) then raise exception 'Solo el administrador puede corregir saldos';end if;
+ if request_id is null or new_total is null or expected_total is null or new_total not between 0 and 9007199254740991 or expected_total<0 then raise exception 'Saldo no válido';end if;
+ if reason is null or length(btrim(reason)) not between 5 and 500 then raise exception 'Escribe un motivo de entre 5 y 500 caracteres; quedará en el historial';end if;
+ select * into u from arka_users where id=worker and role='worker' and deleted_at is null for update;
+ if not found then raise exception 'Trabajador no disponible';end if;
+ select * into previous from arka_worker_balance_adjustments where id=request_id;
+ if found then
+  if previous.actor_id<>actor or previous.worker_id<>worker or previous.after_cents<>new_total or previous.before_cents<>expected_total or previous.reason<>btrim(reason) then raise exception 'La confirmación ya pertenece a otro ajuste';end if;
+  return jsonb_build_object('ok',true,'already_applied',true);
+ end if;
+ if u.balance_cents<>expected_total then raise exception 'El saldo cambió mientras editabas. Cierra esta ventana y vuelve a abrirla antes de corregirlo';end if;
+ if new_total<u.reserved_cents then raise exception 'No puedes reducir el saldo por debajo del dinero reservado para retiros pendientes';end if;
+ delta:=new_total-u.balance_cents;
+ if delta=0 then raise exception 'El saldo nuevo es igual al actual; no hay nada que corregir';end if;
+ insert into arka_worker_balance_adjustments values(request_id,actor,worker,u.balance_cents,new_total,u.reserved_cents,btrim(reason),now());
+ update arka_users set balance_cents=new_total where id=worker;
+ insert into arka_ledger(worker_id,amount_cents,kind,reference_id,note) values(worker,delta,'balance_adjustment',request_id,'Corrección administrativa: '||btrim(reason));
+ insert into arka_finance(event_key,kind,amount_cents,reference_id,user_id,description)
+ values('worker-balance:'||request_id,'adjustment',-delta,request_id,worker,'Corrección de saldo de trabajador: '||btrim(reason));
+ return jsonb_build_object('ok',true,'balance_cents',new_total);
+end $$;
+revoke all on function arka_correct_worker_balance(uuid,uuid,bigint,bigint,text,uuid) from public,anon,authenticated;
+grant execute on function arka_correct_worker_balance(uuid,uuid,bigint,bigint,text,uuid) to service_role;
+notify pgrst,'reload schema';

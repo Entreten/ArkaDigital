@@ -39,3 +39,24 @@ do $$declare ad uuid;w uuid;w2 uuid;b uuid;p uuid;s uuid;f uuid;o uuid;cu uuid;j
 end $$;
 rollback;
 \echo EDIT_AND_REMOVE_ASSIGNMENTS_OK
+begin;
+do $$declare a uuid;w uuid;buyer uuid;k uuid:=gen_random_uuid();begin
+ insert into arka_users(email,name,password_hash,role) values('balance-admin@example.invalid','Admin','test','admin') returning id into a;
+ insert into arka_users(email,name,password_hash,role,balance_cents,reserved_cents) values('balance-worker@example.invalid','Worker','test','worker',1000,300) returning id into w;
+ insert into arka_users(email,name,password_hash,role) values('balance-buyer@example.invalid','Buyer','test','wholesale') returning id into buyer;
+ begin perform arka_correct_worker_balance(w,w,2000,1000,'Prueba permiso',gen_random_uuid());raise exception 'TEST: worker can correct balance';exception when raise_exception then if sqlerrm like 'TEST:%' then raise;end if;end;
+ perform arka_correct_worker_balance(a,w,1500,1000,'Corrección de prueba',k);
+ perform arka_correct_worker_balance(a,w,1500,1000,'Corrección de prueba',k);
+ if (select balance_cents from arka_users where id=w)<>1500 or (select count(*) from arka_ledger where reference_id=k)<>1
+ or not exists(select 1 from arka_finance where reference_id=k and kind='adjustment' and amount_cents=-500) then raise exception 'TEST: adjustment duplicated or wrong accounting';end if;
+ begin perform arka_correct_worker_balance(a,w,1200,1000,'Saldo desactualizado',gen_random_uuid());raise exception 'TEST: overwrote concurrent balance';exception when raise_exception then if sqlerrm like 'TEST:%' then raise;end if;end;
+ begin perform arka_correct_worker_balance(a,w,200,1500,'Reducir reservado',gen_random_uuid());raise exception 'TEST: reserved funds modified';exception when raise_exception then if sqlerrm like 'TEST:%' then raise;end if;end;
+ begin perform arka_correct_worker_balance(a,w,-1,1500,'Saldo negativo',gen_random_uuid());raise exception 'TEST: negative balance';exception when raise_exception then if sqlerrm like 'TEST:%' then raise;end if;end;
+ perform arka_correct_worker_balance(a,w,400,1500,'Reducir saldo erróneo',gen_random_uuid());
+ if not exists(select 1 from arka_users where id=w and balance_cents=400 and reserved_cents=300) then raise exception 'TEST: reduction failed';end if;
+ begin perform arka_correct_worker_balance(a,buyer,100,0,'No es trabajador',gen_random_uuid());raise exception 'TEST: changed customer wallet';exception when raise_exception then if sqlerrm like 'TEST:%' then raise;end if;end;
+ if (select coalesce(sum(amount_cents),0) from arka_ledger where worker_id=w)<>-600
+ or (select coalesce(sum(amount_cents),0) from arka_finance where user_id=w)<>600 then raise exception 'TEST: financial adjustment mismatch';end if;
+end $$;
+rollback;
+\echo WORKER_BALANCE_CORRECTIONS_OK

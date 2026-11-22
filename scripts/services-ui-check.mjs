@@ -9,7 +9,7 @@ function state(){
  services.orders=[{id:'change1',number:1,offer_id:'offer1',offer_name:'Cambio de contraseña de prueba',mode:'password',buyer_id:u.id,status:'processing',unit_cents:25,margin_cents:5,quantity:1,total_cents:25,credit_cents:0,created_at:now}];
  services.units=[{id:'unit-demo',order_id:'change1',position:1,worker_id:u.id,status:'assigned',email:'current@example.invalid',due_at:new Date(Date.now()+7200000).toISOString(),needs_password:false}];
  services.finance={settings:{reserve_bps:null,pending_hours:24,unpaid_retention_days:30},entries:[],costs:[],sales:[],users:[],wallet:[],storage:{used_bytes:1000,limit_bytes:524288000,measured_at:now},available:0,reserve:0,commercial:0,own:0,commissions:0,withdrawn:0,workers_due:0,buyer_credits:0,pending_historical:0,unknown_costs:0,pending_reserve:0,funds_processing:0};
- return {server_now:new Date().toISOString(),user:u,settings:{theme:'original',announcement:'',announcement_enabled:false,announcement_interval:75},products:[{id:'product1',name:'Prime de prueba',mode:'duration',duration_months:6,price_cents:100,active:true}],banks:[],users:[u],assignments:profile==='wholesale'?[]:[{id:'assignment1',worker_id:u.id,product_id:'product1',quantity:100,rate_cents:50,active:true,due_at:new Date(Date.now()+7200000).toISOString(),work_submitted_at:null}],accounts:[],orders:[{id:'order1',buyer_id:u.id,status:'delivered',total_cents:10000,credit_cents:0,created_at:now,delivered_at:now}],items:[{id:'item1',order_id:'order1',product_id:'product1',product_name:'Prime de prueba',quantity:100}],reports:[],withdrawals:[],ledger:[],stocks:[],services};
+  return {server_now:new Date().toISOString(),user:u,settings:{theme:'original',announcement:'',announcement_enabled:false,announcement_interval:75},products:[{id:'product1',name:'Prime de prueba',mode:'duration',duration_months:6,price_cents:100,active:true}],banks:[],users:[u,...(profile==='admin'?[{id:'22222222-2222-4222-8222-222222222222',name:'Trabajador de prueba',email:'balance-ui@example.invalid',phone:'+593999999999',role:'worker',active:true,balance_cents:900,reserved_cents:300}]:[])],assignments:profile==='wholesale'?[]:[{id:'assignment1',worker_id:u.id,product_id:'product1',quantity:100,rate_cents:50,active:true,due_at:new Date(Date.now()+7200000).toISOString(),work_submitted_at:null}],accounts:[],orders:[{id:'order1',buyer_id:u.id,status:'delivered',total_cents:10000,credit_cents:0,created_at:now,delivered_at:now}],items:[{id:'item1',order_id:'order1',product_id:'product1',product_name:'Prime de prueba',quantity:100}],reports:[],withdrawals:[],ledger:[],stocks:[],services};
 }
 const server=createServer(async(req,res)=>{
  try{
@@ -40,6 +40,15 @@ try{
     if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2))throw Error('Desbordamiento horizontal '+role+' '+view+' '+width);
    }
    if(role==='admin'){await page.evaluate(()=>document.querySelector('[data-nav="changes-offers"]').click());await page.locator('[data-action="changes-offer-new"]').click();await page.waitForSelector('[name="name"]');if(await page.locator('[name="workers"]').count())throw Error('La oferta aún preselecciona responsables');await page.locator('[data-action="close"]').first().click();}
+    if(role==='admin'){
+     await page.evaluate(()=>document.querySelector('[data-nav="workers"]').click());await page.locator('[data-action="user-edit"]').click();await page.locator('[data-action="worker-balance"]').click();
+     if(await page.locator('[name="balance"]').inputValue()!=='9.00')throw Error('El saldo inicial de la corrección no coincide');
+     await page.locator('[name="balance"]').fill('10.00');await page.locator('[name="reason"]').fill('Corrección de prueba');await page.locator('[name="confirmed"]').check();
+     const posted=page.waitForRequest(r=>r.url().endsWith('/api/workers/balance')&&r.method()==='POST');
+     await page.locator('#modal-form [type="submit"]').click();const body=(await posted).postDataJSON();
+     if(body.balance_cents!==1000||body.expected_cents!==900||!body.request_id||body.reason!=='Corrección de prueba')throw Error('La corrección no envía saldo final, versión anterior y motivo');
+     await page.waitForFunction(()=>!document.querySelector('#modal-form'));
+    }
     const inboxOpened=await page.evaluate(()=>{S.services.notifications=[{id:'temporary',message:'Aviso temporal de prueba',created_at:new Date().toISOString()}];handlers['changes-notifications']();return document.querySelector('.modal').textContent.includes('Aviso temporal de prueba');});
     if(!inboxOpened)throw Error('No se abrió el buzón de avisos');
     await page.evaluate(()=>applyLiveState({...S,services:{...S.services,notifications:[]}}));

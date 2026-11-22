@@ -108,6 +108,13 @@ app.post('/api/work/deadline',async(req,res)=>{
  const result=await db('rpc/arka_set_work_deadline',{method:'POST',body:{actor:req.user.id,kind:req.body.kind,target:req.body.id,new_due:due}});
  res.json(result);notifyLiveClients();
 });
+app.post('/api/workers/balance',async(req,res)=>{
+ if(req.user.role!=='admin')throw fail('Solo el administrador puede corregir saldos.',403);
+ const b=req.body;
+ if(!Number.isSafeInteger(b.balance_cents)||!Number.isSafeInteger(b.expected_cents)||b.balance_cents<0)throw fail('Saldo no válido.');
+ const result=await db('rpc/arka_correct_worker_balance',{method:'POST',body:{actor:req.user.id,worker:b.id,new_total:b.balance_cents,expected_total:b.expected_cents,reason:b.reason,request_id:b.request_id}});
+ res.json(result);notifyLiveClients();
+});
 app.post('/api/work/assignment',async(req,res)=>{
  if(req.user.role!=='admin')throw fail('Solo el administrador puede editar o quitar asignaciones.',403);
  const b=req.body;
