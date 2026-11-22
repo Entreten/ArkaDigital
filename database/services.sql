@@ -54,6 +54,7 @@ create table if not exists public.arka_change_units(
  position int not null,worker_id uuid references arka_users(id),linked_account_id uuid references arka_accounts(id),
  source_fingerprint text not null,result_fingerprint text,
  status text not null default 'pending' check(status in('pending','assigned','submitted','approved','rejected','blocked','refund_requested','cancelled')),
+ due_at timestamptz,
  reason text not null default '',accepted_at timestamptz,submitted_at timestamptz,approved_at timestamptz,
  refunded_at timestamptz,created_at timestamptz not null default now(),
  unique(order_id,position),unique(order_id,source_fingerprint));
@@ -64,7 +65,9 @@ create index if not exists arka_change_units_worker on arka_change_units(worker_
 create index if not exists arka_change_orders_buyer on arka_change_orders(buyer_id,created_at desc);
 create table if not exists public.arka_change_secrets(
  unit_id uuid primary key references arka_change_units(id) on delete cascade,
- original_cipher text,result_cipher text,suggestion_cipher text);
+ original_cipher text,result_cipher text,suggestion_cipher text,requested_cipher text);
+alter table arka_change_units add column if not exists due_at timestamptz;
+alter table arka_change_secrets add column if not exists requested_cipher text;
 create table if not exists public.arka_change_history(
  id uuid primary key default gen_random_uuid(),order_id uuid not null,unit_id uuid,actor_id uuid,
  action text not null,detail text not null default '',created_at timestamptz not null default now());
@@ -272,6 +275,7 @@ begin
   perform 1 from arka_users where id=actor for update;
   select * into offer from arka_change_offers where id=(payload->>'offer_id')::uuid and active;
   if not found then raise exception 'Oferta no disponible';end if;
+  if offer.mode<>'password' then raise exception 'Solo se permiten cambios de contraseña';end if;
   if coalesce((payload->>'acknowledged')::boolean,false)=false then raise exception 'Confirma que las cuentas son tuyas y tienen acceso y suscripción cuando corresponde';end if;
   if jsonb_array_length(payload->'accounts') not between 1 and 1000 then raise exception 'Carga entre 1 y 1000 cuentas';end if;
   if (select count(*) from arka_change_orders where buyer_id=actor and status in('pending','payment_review'))>=5 then raise exception 'Completa tus pedidos de pago pendientes';end if;
@@ -289,7 +293,7 @@ begin
    end if;
    insert into arka_change_units(order_id,position,source_fingerprint,linked_account_id)
     values(oid,n,x->>'fingerprint',(x->>'linked_account_id')::uuid) returning id into unit.id;
-   insert into arka_change_secrets(unit_id,original_cipher,suggestion_cipher) values(unit.id,x->>'cipher',x->>'suggestion_cipher');
+   insert into arka_change_secrets(unit_id,original_cipher,suggestion_cipher,requested_cipher) values(unit.id,x->>'cipher',x->>'suggestion_cipher',x->>'requested_cipher');
   end loop;
   select least(credit_cents,(select total_cents from arka_change_orders where id=oid)) into credit from arka_users where id=actor;
   perform arka_wallet_move(actor,'change-credit:'||oid,-credit,oid,'Saldo aplicado al pedido de cambios');
@@ -332,18 +336,19 @@ begin
   select * into offer from arka_change_offers where id=o.offer_id;
   for x in select * from jsonb_array_elements(payload->'allocations') loop
    recipient:=(x->>'worker_id')::uuid;n:=(x->>'quantity')::int;
+    if coalesce(x->>'due_at',payload->>'due_at','')='' or coalesce(x->>'due_at',payload->>'due_at')::timestamptz<=now() then raise exception 'Indica fecha y hora máximas futuras para cada asignación';end if;
    if n<1 or not exists(select 1 from arka_users where id=recipient and active and deleted_at is null and (role='admin' or (role='worker' and (coalesce(cardinality(offer.workers),0)=0 or id=any(offer.workers))))) then raise exception 'Elige un trabajador activo habilitado para esta oferta o a ti mismo';end if;
    if exists(select 1 from arka_change_units where order_id=oid and worker_id=recipient and status in('assigned','rejected') and accepted_at is not null) and coalesce((payload->>'reassign')::boolean,false) then null;end if;
    with chosen as(select id from arka_change_units where order_id=oid and
     ((not coalesce((payload->>'reassign')::boolean,false) and status='pending') or
      (coalesce((payload->>'reassign')::boolean,false) and status in('assigned','rejected') and id in(select value::uuid from jsonb_array_elements_text(payload->'unit_ids'))))
     order by position for update limit n)
-    update arka_change_units set worker_id=recipient,status='assigned',accepted_at=null where id in(select id from chosen);
+     update arka_change_units set worker_id=recipient,status='assigned',accepted_at=null,due_at=coalesce(x->>'due_at',payload->>'due_at')::timestamptz where id in(select id from chosen);
    get diagnostics completed=row_count;if completed<>n then raise exception 'No hay suficientes unidades pendientes para ese reparto';end if;
-   insert into arka_change_notifications(user_id,order_id,message) values(recipient,oid,'Tienes unidades asignadas. Revisa las indicaciones y acepta la tarifa.');
+    insert into arka_change_notifications(user_id,order_id,message) values(recipient,oid,'Tienes cambios de contraseña asignados. Revisa las indicaciones, la fecha máxima y acepta la tarifa.');
   end loop;
  elsif action='deliver' then
-  if u.role<>'admin' or o.status<>'processing' then raise exception 'Pedido no disponible para entrega';end if;
+   if not (u.role='admin' or (u.role='wholesale' and o.buyer_id=actor)) or o.status<>'processing' then raise exception 'Pedido no disponible para entrega';end if;
   if exists(select 1 from arka_change_units where order_id=oid and (status not in('approved','cancelled') or (status='cancelled' and refunded_at is null))) then raise exception 'Todas las unidades deben estar aprobadas o canceladas con devolución registrada';end if;
   for unit in select * from arka_change_units where order_id=oid and status='approved' order by position loop
    if unit.linked_account_id is not null then
@@ -363,7 +368,7 @@ begin
   select count(*) into completed from arka_change_units where order_id=oid and status='approved';
   insert into arka_finance(event_key,kind,amount_cents,reference_id,description) values('change-margin:'||oid,'margin',completed::bigint*o.margin_cents,oid,'Margen comercial CAM-'||o.number);
   update arka_change_orders set status='delivered',delivered_at=now(),access_until=now()+interval '7 days',request_cipher=null where id=oid;
-  update arka_change_secrets set original_cipher=null,suggestion_cipher=null where unit_id in(select id from arka_change_units where order_id=oid);
+  update arka_change_secrets set original_cipher=null,suggestion_cipher=null,requested_cipher=null where unit_id in(select id from arka_change_units where order_id=oid);
   insert into arka_change_notifications(user_id,order_id,message) values(o.buyer_id,oid,'Pedido entregado. Copia o exporta tus datos antes de siete días.');
  else
   select * into unit from arka_change_units where id=(payload->>'id')::uuid and order_id=oid for update;
@@ -395,12 +400,15 @@ begin
     if not found then raise exception 'Cuenta vinculada no disponible';end if;
     if exists(select 1 from arka_change_units cu join arka_change_orders co on co.id=cu.order_id where cu.id<>unit.id and cu.linked_account_id=(payload->>'linked_account_id')::uuid and co.status not in('delivered','cancelled','expired') and cu.status<>'cancelled') then raise exception 'Esta cuenta ya tiene otro cambio pendiente';end if;
    end if;
-   update arka_change_secrets set original_cipher=payload->>'cipher',result_cipher=null,suggestion_cipher=payload->>'suggestion_cipher' where unit_id=unit.id;
-   update arka_change_units set status='assigned',source_fingerprint=payload->>'fingerprint',linked_account_id=(payload->>'linked_account_id')::uuid,result_fingerprint=null,reason='' where id=unit.id;
+    update arka_change_secrets set original_cipher=payload->>'cipher',result_cipher=null,suggestion_cipher=payload->>'suggestion_cipher',requested_cipher=payload->>'requested_cipher' where unit_id=unit.id;
+    update arka_change_units set status='assigned',accepted_at=null,source_fingerprint=payload->>'fingerprint',linked_account_id=null,result_fingerprint=null,reason='' where id=unit.id;
    insert into arka_change_notifications(user_id,order_id,unit_id,message) values(unit.worker_id,oid,unit.id,'El mayorista corrigió o sustituyó la cuenta. Puedes reintentar.');
   elsif action='refund_request' then
    if u.role<>'wholesale' or unit.status<>'blocked' then raise exception 'Primero debe existir una incidencia';end if;
-   update arka_change_units set status='refund_requested' where id=unit.id;
+    perform arka_wallet_move(o.buyer_id,'unit-refund:'||unit.id,o.unit_cents,oid,'Devolución elegida de unidad '||unit.position||' de CAM-'||o.number);
+    update arka_change_units set status='cancelled',refunded_at=now() where id=unit.id;
+    delete from arka_change_secrets where unit_id=unit.id;
+    insert into arka_change_notifications(user_id,order_id,message) values(o.buyer_id,oid,'La unidad fue cancelada y su importe fue devuelto a tu saldo interno.');
   elsif action='refund_reject' then
    if u.role<>'admin' or unit.status<>'refund_requested' or length(btrim(coalesce(payload->>'reason','')))<3 then raise exception 'Solicitud o motivo no válido';end if;
    update arka_change_units set status='blocked',reason=payload->>'reason' where id=unit.id;
@@ -413,7 +421,7 @@ begin
   else raise exception 'Operación no válida';end if;
  end if;
  insert into arka_change_history(order_id,unit_id,actor_id,action) values(oid,unit.id,actor,action);
- if action in('approve','refund_approve') and u.role='admin'
+  if (action in('approve','refund_approve') and u.role='admin' or action='refund_request' and u.role='wholesale')
   and exists(select 1 from arka_change_orders where id=oid and status='processing')
   and not exists(select 1 from arka_change_units where order_id=oid and (status not in('approved','cancelled') or (status='cancelled' and refunded_at is null))) then
   return arka_changes(actor,'deliver',jsonb_build_object('id',oid));

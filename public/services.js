@@ -1,6 +1,6 @@
 /* Additive panels: inventory, existing warranties, theme and audio remain in app.js. */
 (()=>{
- const modes={email:'Solo correo',password:'Solo contraseña',both:'Correo y contraseña'};
+ const modes={email:'Servicio anterior',password:'Cambio de contraseña',both:'Servicio anterior'};
  const states={pending:'Pendiente de pago',payment_review:'Pago en revisión',processing:'En proceso',delivered:'Entregado',expired:'Vencido',cancelled:'Cancelado',assigned:'Asignada',submitted:'En revisión',approved:'Aprobada',rejected:'Corregir y reenviar',blocked:'Esperando al mayorista',refund_requested:'Devolución solicitada'};
  const kinds={margin:'Ganancia comercial',own:'Mi trabajo',commission:'Comisión 3%',reserve:'Reserva de garantía',reserve_use:'Uso de reserva',withdrawal:'Retiro registrado',adjustment:'Ajuste de reserva'};
  const X=()=>S?.services||{offers:[],orders:[],units:[],notifications:[],wallet:[],credit_cents:0};
@@ -10,15 +10,15 @@
  const nameOf=id=>S.users.find(u=>u.id===id)?.name||(id===S.user.id?S.user.name:'Asignado');
  const active=o=>!['delivered','cancelled','expired'].includes(o.status);
  const click=(label,action,id='',cls='secondary small')=>btn(label,'changes-'+action,id,cls);
- const instructions=d=>{const[base='',domain='']=String(d.request.pattern||'').split('@'),requested=d.request.requested_password??d.request.fixed_password;return '<section class="change-instructions"><strong>Indicaciones obligatorias · '+esc(modes[d.order.mode])+'</strong>'+
-  (d.order.mode!=='password'?'<p><strong>Nombre/base solicitada:</strong> <code>'+esc(base)+'</code><br><strong>Dominio solicitado:</strong> <code>'+esc(domain)+'</code></p><p>Conserva exactamente la base <code>'+esc(base)+'</code>. Añade números aleatorios distintos por cuenta y después <code>@'+esc(domain)+'</code>. Ejemplos del formato solicitado: <code>'+esc(base+'482759@'+domain)+'</code>, <code>'+esc(base+'917638@'+domain)+'</code>. <strong>No uses 01, 02, 03 ni otras secuencias o números repetitivos.</strong> No sustituyas la base por otro nombre ni cambies el dominio.</p>':'<p>Conserva el correo original; este pedido solo modifica la contraseña.</p>')+
-  (d.order.mode==='email'?'<p>Conserva la contraseña actual; el cliente solo pidió cambiar el correo.</p>':requested?'<p><strong>Contraseña nueva solicitada por el cliente para este pedido:</strong> <code class="sensitive">'+esc(requested)+'</code>. Aplícala exactamente. No es una contraseña predeterminada del sistema ni debe usarse para otros pedidos.</p>':'<p><strong>Falta la contraseña nueva solicitada. Consulta al cliente; no inventes una contraseña.</strong></p>')+
+ const instructions=d=>{const requested=d.request.requested_password??d.request.fixed_password;return '<section class="change-instructions"><strong>Indicaciones obligatorias · Solo cambio de contraseña</strong>'+
+  '<p><strong>Conserva el correo actual exactamente como está.</strong> Cambia únicamente la contraseña en la plataforma externa.</p>'+
+  (requested?'<p><strong>Contraseña nueva solicitada para esta cuenta:</strong> <code class="sensitive">'+esc(requested)+'</code>. Aplícala exactamente; no inventes otra contraseña.</p>':'<p><strong>Falta la contraseña nueva. El mayorista debe indicarla antes de iniciar.</strong></p>')+
   (d.order.instructions?'<p>'+esc(d.order.instructions)+'</p>':'')+
-  '<p><strong>El cambio se realiza manualmente en la plataforma externa.</strong> La sugerencia no hace el cambio. Registra solo los datos que ya aplicaste.</p></section>';};
+  '<p><strong>El visto solo registra que ya realizaste el cambio manualmente y comprobaste el acceso.</strong> No modifica la cuenta por sí solo. Si no puedes completarlo, reporta el problema al mayorista.</p></section>';};
  const extraNav={
-  wholesale:[['label','SERVICIOS Y SALDO'],['changes-shop','⇄','Solicitar cambios'],['changes-orders','▤','Mis cambios de correo/clave'],['credit-wallet','＄','Mi saldo a favor']],
-  worker:[['label','CAMBIOS DE CORREO Y CLAVE'],['changes-work','⇄','Mis cambios asignados']],
-  admin:[['label','CAMBIOS DE CORREO Y CLAVE'],['changes-offers','▦','Ofertas de cambios'],['changes-review','✓','Pedidos y revisión de cambios'],['changes-work','⇄','Cambios que realizo yo'],['own-production','↑','Mi producción para stock'],['label','CONTROL FINANCIERO'],['finances','＄','Mis ganancias y fondos']]
+  wholesale:[['label','SERVICIOS Y SALDO'],['changes-shop','⇄','Cambiar contraseñas'],['changes-orders','▤','Mis cambios de contraseña'],['credit-wallet','＄','Mi saldo a favor']],
+  worker:[['label','CAMBIOS DE CONTRASEÑA'],['changes-work','⇄','Mis cambios asignados']],
+  admin:[['label','CAMBIOS DE CONTRASEÑA'],['changes-offers','▦','Ofertas de contraseñas'],['changes-review','✓','Pedidos y revisión de cambios'],['changes-work','⇄','Contraseñas que cambio yo'],['own-production','↑','Mi producción para stock'],['label','CONTROL FINANCIERO'],['finances','＄','Mis ganancias y fondos']]
  };
  Object.keys(extraNav).forEach(r=>navs[r].push(...extraNav[r]));
  navs.worker.find(n=>n[0]==='upload')[2]='Generar cuentas para stock';
@@ -47,17 +47,18 @@
  };
  function renderOffers(admin){
   const offers=X().offers;
-  $('#content').innerHTML=head(admin?'Ofertas de cambios':'Cambios de correo y contraseña',admin?'Tú defines el precio al mayorista, tu parte y quién puede realizar cada oferta.':'Servicio independiente de la compra de cuentas. Tus cuentas nunca entran al stock.',admin?click('+ Crear oferta','offer-new','','primary'):'')+
+   $('#content').innerHTML=head(admin?'Ofertas de cambios de contraseña':'Cambio de contraseñas',admin?'Tú defines el precio al mayorista, tu parte y quién puede realizar cada oferta.':'Envía correo, contraseña actual y contraseña nueva por cuenta. Nunca se cambia el correo.',admin?click('+ Crear oferta','offer-new','','primary'):'')+
    '<div class="notice">El cliente debe ser propietario o estar autorizado sobre las cuentas y proporcionar acceso válido y suscripción vigente cuando corresponda. El servicio no reactiva suscripciones ni crea buzones de correo.</div>'+
    '<div class="change-offers">'+offers.filter(o=>admin||o.active).map(o=>'<section class="panel"><span class="eyebrow">'+esc(modes[o.mode])+'</span><h3>'+esc(o.name)+'</h3><strong class="price">'+money(o.price_cents)+' / cuenta</strong>'+
    (admin?'<p>Tu parte: '+money(o.margin_cents)+' · Ejecución: '+money(o.price_cents-o.margin_cents)+' · Sin comisión del 3%.</p>':'')+
    '<p>'+esc(o.instructions||'Modificación manual con revisión antes de la entrega completa.')+'</p>'+click(admin?'Editar oferta':'Solicitar servicio',admin?'offer-edit':'buy',o.id,'primary')+(admin&&!o.active?'<span class="badge">Oculta</span>':'')+'</section>').join('')+'</div>'+(offers.length?'':empty('No hay ofertas publicadas'));
  }
  function progress(o,onlyMine=false){const rows=unitRows(o).filter(u=>!onlyMine||u.worker_id===S.user.id),assigned=rows.filter(u=>u.worker_id).length,sent=rows.filter(u=>['submitted','approved'].includes(u.status)).length,approved=rows.filter(u=>u.status==='approved').length,cancelled=rows.filter(u=>u.status==='cancelled').length;return assigned+' asignadas · '+sent+' enviadas · '+approved+' aprobadas · '+cancelled+' canceladas · '+rows.filter(u=>!['submitted','approved','cancelled'].includes(u.status)).length+' pendientes';}
+  function nextDeadline(o,own){const pending=unitRows(o).filter(u=>u.worker_id&&(!own||u.worker_id===S.user.id)&&!['submitted','approved','cancelled'].includes(u.status));const next=pending.filter(u=>u.due_at).sort((a,b)=>Date.parse(a.due_at)-Date.parse(b.due_at))[0];return next?window.workDeadlineHTML('change_unit',next):'<span class="muted">'+(pending.length?'Sin fecha máxima asignada':'Sin trabajo pendiente de envío')+'</span>';}
  function renderOrders(){
   const own=view==='changes-work',admin=role()==='admin',orders=X().orders.filter(o=>own?o.status==='processing'&&unitRows(o).some(u=>u.worker_id===S.user.id):admin?active(o):true).sort((a,b)=>b.created_at.localeCompare(a.created_at));
-  $('#content').innerHTML=head(own?'Cambios que tengo asignados':admin?'Pedidos y revisión de cambios':'Mis cambios de correo y contraseña','Sin mezclar inventario ni garantías de productos. '+(admin?'Las asignaciones y reasignaciones las decides tú.':''),click('Actualizar','refresh'))+
-   panel('',table(['Pedido / servicio','Estado','Progreso',...(own?[]:['Total']),'Acción'],orders.map(o=>['<strong>CAM-'+o.number+'</strong><br>'+esc(o.offer_name)+'<br><small>'+date(o.created_at)+'</small>',status(o.status),progress(o,own),...(own?[]:[money(o.total_cents)]),click('Abrir pedido','order',o.id)])))+
+   $('#content').innerHTML=head(own?'Contraseñas que tengo asignadas':admin?'Pedidos y revisión de contraseñas':'Mis cambios de contraseña','Sin mezclar inventario ni garantías de productos. '+(admin?'Las asignaciones, fechas máximas y reasignaciones las decides tú.':''),click('Actualizar','refresh'))+
+    panel('',table(['Pedido / servicio','Estado','Progreso',...(own?[]:['Total']),...(role()==='wholesale'?[]:['Próxima fecha máxima']),'Acción'],orders.map(o=>['<strong>CAM-'+o.number+'</strong><br>'+esc(o.offer_name)+'<br><small>'+date(o.created_at)+'</small>',status(o.status),progress(o,own),...(own?[]:[money(o.total_cents)]),...(role()==='wholesale'?[]:[nextDeadline(o,own)]),click('Abrir pedido','order',o.id)])))+
    (admin&&!own?panel('Entregados y archivados',table(['Pedido','Servicio','Entregado','Resumen'],X().orders.filter(o=>!active(o)).sort((a,b)=>b.created_at.localeCompare(a.created_at)).map(o=>['CAM-'+o.number,esc(o.offer_name),date(o.delivered_at),click('Ver resumen','order',o.id)]))):'');
  }
  function renderWallet(){
@@ -111,14 +112,15 @@
    if(role()==='wholesale'&&new Date(o.access_until)>new Date()&&!o.purged_at)h+='<div class="change-instructions"><strong>Descarga tus cuentas antes del '+date(o.access_until)+'.</strong><p>El archivo contiene contraseñas; guárdalo en un lugar seguro.</p><a class="button primary" href="/api/services/orders/'+encodeURIComponent(id)+'/export">Exportar a Excel</a></div>';
    else h+='<p class="subtle">Solo se conserva el resumen administrativo y contable. Los responsables no conservan acceso a las credenciales.</p>';
   }
-  h+=table(['Cuenta','Estado',...(admin?['Responsable']:[]),'Acción'],rows.map(u=>{
+   h+=table(['Cuenta','Estado',...(admin?['Responsable']:[]),'Fecha máxima y tiempo restante','Acción'],rows.map(u=>{
    let actions='';
    if(o.status==='processing'){
     if((admin||u.worker_id===S.user.id)&&role()!=='wholesale')actions+=click('Ver datos e indicaciones','unit',u.id);
     if(role()==='wholesale'&&['blocked','refund_requested'].includes(u.status))actions+=click('Responder incidencia','unit',u.id);
+     if(role()==='wholesale'&&u.needs_password&&['pending','assigned','rejected'].includes(u.status))actions+=click('Indicar contraseña nueva','set-password',u.id);
     if(admin&&['assigned','rejected'].includes(u.status))actions+=click('Reasignar','reassign',u.id);
    }else if(o.status==='delivered'&&role()==='wholesale'&&u.status!=='cancelled'&&new Date(o.access_until)>new Date()&&!o.purged_at)actions=click('Ver resultado','unit',u.id);
-   return ['#'+u.position+(u.email?'<br>'+esc(u.email):'')+(u.reason?'<br><span class="muted">'+esc(u.reason)+'</span>':''),u.status==='pending'?'<span class="badge">Sin asignar</span>':status(u.status),...(admin?[esc(u.worker_id?nameOf(u.worker_id):'Sin asignar')]:[]),actions||'—'];
+    return ['#'+u.position+(u.email?'<br>'+esc(u.email):'')+(u.reason?'<br><span class="muted">'+esc(u.reason)+'</span>':''),u.status==='pending'?'<span class="badge">Sin asignar</span>':status(u.status),...(admin?[esc(u.worker_id?nameOf(u.worker_id):'Sin asignar')]:[]),window.workDeadlineHTML('change_unit',u),actions||'—'];
   }));
   if(admin){const history=(X().history||[]).filter(e=>e.order_id===id).sort((a,b)=>b.created_at.localeCompare(a.created_at));h+=panel('Historial administrativo',table(['Fecha','Acción','Responsable'],history.map(e=>[date(e.created_at),esc(e.action),esc(nameOf(e.actor_id))])));}
   h+='<div class="row-actions">'+click('Actualizar pedido','order',id)+'</div>';modal('CAM-'+o.number,h,null,true);
@@ -129,9 +131,9 @@
   let h=instructions(d)+'<h3>Cuenta '+u.position+'</h3>'+credential(d.original);
   if(u.reason)h+='<div class="notice">'+esc(u.reason)+'</div>';
   if(d.result)h+='<h3>Resultado enviado a revisión</h3>'+credential(d.result);
-  if(role()==='wholesale')h+='<div class="row-actions">'+click('Corregir datos de esta cuenta','correct',id)+click('Enviar otra cuenta','replace',id)+(u.status==='blocked'?click('Solicitar devolución al saldo','refund-request',id,'danger small'):'')+'</div>';
+  if(role()==='wholesale')h+='<div class="row-actions">'+click('Reemplazar cuenta','replace',id)+(u.status==='blocked'?click('Devolver esta cuenta a mi saldo','refund-request',id,'danger small'):'')+'</div>';
   else{
-   if(u.worker_id===S.user.id&&['assigned','rejected'].includes(u.status))h+='<div class="notice">Pago por esta cuenta completada y entregada: '+money(d.order.unit_cents-d.order.margin_cents)+'. Sin descuento del 3%. La aprobación individual no acredita el saldo hasta la entrega completa.</div><div class="row-actions">'+(!u.accepted_at?click('Acepto instrucciones y tarifa','accept',id,'primary'):click('Registrar cambio','submit',id,'primary'))+click('Reportar cuenta con problema','problem',id,'danger small')+'</div>';
+   if(u.worker_id===S.user.id&&['assigned','rejected'].includes(u.status))h+='<div class="notice">Pago por esta cuenta aprobada y entregada: '+money(d.order.unit_cents-d.order.margin_cents)+'. Sin descuento del 3%. Tú realizas el cambio; el administrador lo revisa.</div>'+window.workDeadlineHTML('change_unit',u)+'<div class="row-actions">'+click('✓ Cambio realizado','submit',id,'primary')+click('Reportar problema','problem',id,'danger small')+'</div>';
    if(role()==='admin'&&u.status==='submitted')h+='<div class="row-actions">'+click('Aprobar cuenta','approve',id,'success')+click('Devolver con motivo','reject',id,'danger small')+'</div>';
    if(role()==='admin'&&['blocked','refund_requested'].includes(u.status))h+='<div class="row-actions">'+click('Cancelar unidad y devolver '+money(d.order.unit_cents),'refund-approve',id,'danger small')+(u.status==='refund_requested'?click('Rechazar solicitud con motivo','refund-reject',id):'')+'</div>';
   }
@@ -142,13 +144,13 @@
  function editOffer(o={}){
   const people=S.users.filter(u=>u.active&&!u.deleted_at&&['worker','admin'].includes(u.role));
   modal(o.id?'Editar oferta':'Nueva oferta de cambios',
-   field('name','Nombre',o.name)+field('mode','Modalidad',o.mode||'email','select',Object.entries(modes))+field('price','Precio al mayorista por cuenta (USD)',Number(o.price_cents||0)/100,'number')+field('margin','Tu parte comercial por cuenta (USD)',Number(o.margin_cents||0)/100,'number')+
+   field('name','Nombre',o.name)+'<p class="notice">Servicio: solo cambio de contraseña. El correo siempre se conserva.</p>'+field('price','Precio al mayorista por cuenta (USD)',Number(o.price_cents||0)/100,'number')+field('margin','Tu parte comercial por cuenta (USD)',Number(o.margin_cents||0)/100,'number')+
    '<p class="notice">Pago de ejecución = precio − tu parte. No se aplica el 3%. Los pedidos existentes conservan sus tarifas.</p>'+
    field('instructions','Indicaciones adicionales para el equipo',o.instructions||'','textarea',null,false)+
    '<label class="field">Personas habilitadas (opcional)<select name="workers" multiple size="5">'+people.map(u=>'<option value="'+u.id+'" '+((o.workers||[]).includes(u.id)?'selected':'')+'>'+esc(u.name)+(u.role==='admin'?' (administrador)':'')+'</option>').join('')+'</select><small>Si no seleccionas personas, puedes asignar a cualquier trabajador activo. Selecciona nombres solo si deseas restringir esta oferta. No se asigna nada automáticamente.</small></label>'+
    field('active','Oferta visible',o.active!==false,'checkbox'),async d=>{
     const workers=[...$('#modal-form [name=workers]').selectedOptions].map(o=>o.value);
-    await api('/api/services/offers',{id:o.id,name:d.name,mode:d.mode,price_cents:moneyInput(d.price),margin_cents:moneyInput(d.margin),instructions:d.instructions,active:d.active,workers});await load();
+    await api('/api/services/offers',{id:o.id,name:d.name,mode:'password',price_cents:moneyInput(d.price),margin_cents:moneyInput(d.margin),instructions:d.instructions,active:d.active,workers});await load();
    },true);
  }
  handlers['changes-offer-new']=()=>editOffer();
@@ -159,20 +161,18 @@
  handlers['changes-buy']=id=>{
   const offer=X().offers.find(o=>o.id===id);
   modal('Solicitar '+esc(offer.name),'<div class="notice">'+money(offer.price_cents)+' por cuenta. El saldo a favor se aplicará automáticamente. No incluye reactivación de suscripciones ni creación de buzones.</div>'+
-   '<div id="change-single">'+field('current_email','Correo actual de la cuenta','','email')+field('current_password','Contraseña actual de la cuenta','','password')+'</div>'+
+   '<div id="change-single">'+field('current_email','Correo de la cuenta','','email')+field('current_password','Contraseña actual','','password')+field('requested_password','Contraseña nueva que deseas','','password')+'</div>'+
    field('bulk_mode','Quiero enviar varias cuentas a la vez',false,'checkbox')+
-   '<div id="change-bulk" hidden>'+field('text','Cuentas actuales: una por línea, correo_actual|contraseña_actual','','textarea',null,false)+'</div>'+
-   (offer.mode!=='password'?field('email_base','Nombre/base que quieres para el correo nuevo (ejemplo: felipe, sin @)')+field('email_domain','Dominio que se usará, sin @ (debes poder utilizarlo)')+'<p class="notice">El equipo conservará tu nombre/base y añadirá números aleatorios diferentes antes de @dominio. No se usarán números consecutivos.</p>':'')+
-   (offer.mode!=='email'?field('requested_password','Contraseña nueva que deseas para este pedido','','password')+'<p class="subtle">Tú eliges la contraseña nueva. No hay ninguna contraseña predeterminada. Si envías un lote, se aplicará la que indiques a las cuentas de ese pedido.</p>':'')+
+   '<div id="change-bulk" hidden>'+field('text','Una cuenta por línea: correo|contraseña_actual|contraseña_nueva','','textarea',null,false)+'<p class="subtle">Cada cuenta puede tener una contraseña nueva diferente. También puedes pegar tres columnas separadas por tabulación.</p></div>'+
    field('acknowledged','Confirmo que son cuentas propias o autorizadas, accesibles y con suscripción vigente cuando sea necesaria',false,'checkbox'),async d=>{
-    const accounts=d.bulk_mode?d.text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map((l,i)=>{const sep=l.includes('|')?'|':'\t',at=l.indexOf(sep);if(at<0)throw Error('Línea '+(i+1)+': usa correo_actual|contraseña_actual.');return{email:l.slice(0,at).trim(),password:l.slice(at+1).trim()};}):[{email:d.current_email,password:d.current_password}];
+    const accounts=d.bulk_mode?d.text.split(/\r?\n/).filter(l=>l.trim()).map((l,i)=>{const parts=l.split(l.includes('\t')?'\t':'|');if(parts.length!==3||parts.some(p=>!p))throw Error('Línea '+(i+1)+': usa correo|contraseña_actual|contraseña_nueva. Para contraseñas con |, usa tabulación o la carga individual.');return{email:parts[0].trim(),password:parts[1],new_password:parts[2]};}):[{email:d.current_email,password:d.current_password,new_password:d.requested_password}];
     if(!accounts.length)throw Error('Ingresa las cuentas que deseas modificar.');
     const total=accounts.length*offer.price_cents,credit=Math.min(total,Number(X().credit_cents));
     if(!confirm(accounts.length+' cuentas · Total '+money(total)+' · Saldo aplicado '+money(credit)+' · Diferencia a transferir '+money(total-credit)+'. ¿Confirmas el pedido?'))return;
-    await api('/api/services/command',{action:'create',payload:{offer_id:id,accounts,email_base:d.email_base||'',email_domain:d.email_domain||'',requested_password:d.requested_password||'',acknowledged:d.acknowledged}});view='changes-orders';await load();
+    await api('/api/services/command',{action:'create',payload:{offer_id:id,accounts,acknowledged:d.acknowledged}});view='changes-orders';await load();
    },true);
   const form=$('#modal-form'),bulk=form.elements.bulk_mode,text=form.elements.text;text.disabled=true;
-  bulk.addEventListener('change',()=>{const enabled=bulk.checked;$('#change-single').hidden=enabled;$('#change-bulk').hidden=!enabled;for(const name of ['current_email','current_password'])form.elements[name].disabled=enabled;text.disabled=!enabled;text.required=enabled;});
+  bulk.addEventListener('change',()=>{const enabled=bulk.checked;$('#change-single').hidden=enabled;$('#change-bulk').hidden=!enabled;for(const name of ['current_email','current_password','requested_password'])form.elements[name].disabled=enabled;text.disabled=!enabled;text.required=enabled;});
   for(const name of ['current_email','current_password','email_base','email_domain','requested_password'])if(form.elements[name])form.elements[name].autocomplete=name==='requested_password'?'new-password':'off';
  };
  handlers['changes-payment']=id=>{const o=orderBy(id);modal('Declarar transferencia CAM-'+o.number,field('bank_id','Banco','','select',S.banks.map(b=>[b.id,b.bank+' · '+b.account_number]))+field('sender','Remitente')+field('transaction_code','Código de transacción')+field('payment_date','Fecha',new Date().toISOString().slice(0,10),'date')+field('amount','Importe exacto (USD)',(o.total_cents-o.credit_cents)/100,'number'),d=>change('payment',{...d,id,paid_cents:moneyInput(d.amount)}));};
@@ -181,21 +181,23 @@
  handlers['changes-deliver']=async id=>{if(confirm('¿Confirmar la entrega completa y acreditar una sola vez las ganancias? El mayorista tendrá 7 días para descargar los resultados.'))await change('deliver',{id},id);};
  handlers['changes-assign']=id=>{
   const o=orderBy(id),people=eligible(o),pending=unitRows(o).filter(u=>u.status==='pending').length;
-  modal('Asignar pendientes CAM-'+o.number,field('worker_id','Responsable (puedes elegirte)','','select',people.map(u=>[u.id,u.name+(u.role==='admin'?' · yo/admin':'')]))+field('quantity','Cantidad',pending,'number')+'<p class="notice">Solo asigna unidades sin responsable. Tú decides cada reparto.</p>',d=>change('assign',{id,allocations:[{worker_id:d.worker_id,quantity:Number(d.quantity)}]},id));
+  modal('Asignar pendientes CAM-'+o.number,field('worker_id','Responsable (puedes elegirte)','','select',people.map(u=>[u.id,u.name+(u.role==='admin'?' · yo/admin':'')]))+field('quantity','Cantidad',pending,'number')+window.workDeadlineField()+'<p class="notice">Solo asigna unidades sin responsable. Tú decides cada reparto.</p>',d=>change('assign',{id,due_at:window.workDeadlineISO(d.due_at),allocations:[{worker_id:d.worker_id,quantity:Number(d.quantity)}]},id));
  };
  handlers['changes-split']=id=>{
   const o=orderBy(id),people=eligible(o),pending=unitRows(o).filter(u=>u.status==='pending').length;
-  modal('Reparto elegido por ti','<p>Selecciona las personas; se distribuirán las '+pending+' unidades pendientes lo más equitativamente posible. No se reparte nada hasta que tú confirmes.</p><label class="field">Responsables<select name="people" multiple size="6">'+people.map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join('')+'</select></label>',async()=>{
+  modal('Reparto elegido por ti','<p>Selecciona las personas; se distribuirán las '+pending+' unidades pendientes lo más equitativamente posible. No se reparte nada hasta que tú confirmes.</p><label class="field">Responsables<select name="people" multiple size="6">'+people.map(u=>'<option value="'+u.id+'">'+esc(u.name)+'</option>').join('')+'</select></label>'+window.workDeadlineField(),async d=>{
    const selected=[...$('#modal-form [name=people]').selectedOptions].map(o=>o.value);if(!selected.length||pending<selected.length)throw Error('Elige al menos una persona y no más que las unidades pendientes.');
-   const allocations=selected.map((worker_id,i)=>({worker_id,quantity:Math.floor(pending/selected.length)+(i<pending%selected.length?1:0)}));await change('assign',{id,allocations},id);
+   const allocations=selected.map((worker_id,i)=>({worker_id,quantity:Math.floor(pending/selected.length)+(i<pending%selected.length?1:0)}));await change('assign',{id,allocations,due_at:window.workDeadlineISO(d.due_at)},id);
   });
  };
- handlers['changes-reassign']=id=>{const unit=X().units.find(u=>u.id===id),o=orderBy(unit.order_id);modal('Reasignar solo esta cuenta','<div class="notice">El responsable anterior perderá el acceso. No se mueve una cuenta aprobada ni se paga otra vez.</div>'+field('worker_id','Nuevo responsable','','select',eligible(o).map(u=>[u.id,u.name])),d=>change('assign',{id:o.id,reassign:true,unit_ids:[id],allocations:[{worker_id:d.worker_id,quantity:1}]},o.id));};
+ handlers['changes-reassign']=id=>{const unit=X().units.find(u=>u.id===id),o=orderBy(unit.order_id);modal('Reasignar solo esta cuenta','<div class="notice">El responsable anterior perderá el acceso. No se mueve una cuenta aprobada ni se paga otra vez.</div>'+field('worker_id','Nuevo responsable','','select',eligible(o).map(u=>[u.id,u.name]))+window.workDeadlineField(),d=>change('assign',{id:o.id,reassign:true,unit_ids:[id],due_at:window.workDeadlineISO(d.due_at),allocations:[{worker_id:d.worker_id,quantity:1}]},o.id));};
  handlers['changes-accept']=async id=>{await api('/api/services/command',{action:'accept',payload:{id}});await load();await showUnit(id);};
  handlers['changes-submit']=async id=>{
-  const d=await api('/api/services/unit/'+id),data=d.result||d.suggestion||d.original;
-  modal('Registrar cambio realizado',instructions(d)+field('email','Correo final aplicado',data.email,'email')+field('password','Contraseña final aplicada',data.password)+field('confirmed','Confirmo que apliqué estos datos en la plataforma y comprobé el acceso',false,'checkbox'),async form=>{
-   if(!form.confirmed)throw Error('Confirma que realizaste el cambio antes de enviarlo.');await change('submit',{id,email:form.email,password:form.password},d.order.id);
+  const d=await api('/api/services/unit/'+id);
+  modal('✓ Confirmar cambio realizado',instructions(d)+credential({email:d.original.email,password:d.request.requested_password})+field('confirmed','Ya cambié la contraseña, comprobé el acceso y acepto las indicaciones y la tarifa de '+money(d.order.unit_cents-d.order.margin_cents),false,'checkbox'),async form=>{
+   if(!form.confirmed)throw Error('Confirma que realizaste el cambio antes de enviarlo.');
+   if(!d.unit.accepted_at)await api('/api/services/command',{action:'accept',payload:{id}});
+   await change('submit',{id,confirmed_work:true},d.order.id);
   },true);
  };
  handlers['changes-approve']=async id=>{const u=X().units.find(u=>u.id===id);await change('approve',{id},u.order_id);};
@@ -204,9 +206,10 @@
   modal(title,reasons+field('reason','Detalle','','textarea'),d=>change(action,{id,reason:(d.type?d.type+': ':'')+d.reason},u.order_id));
  };
  for(const replace of [false,true])handlers['changes-'+(replace?'replace':'correct')]=async id=>{
-  const d=await api('/api/services/unit/'+id);modal(replace?'Enviar otra cuenta para esta unidad':'Corregir datos de origen',field('email','Correo',replace?'':d.original.email,'email')+field('password','Contraseña',replace?'':d.original.password)+'<div class="notice">No hay un cobro adicional. Se conserva el historial administrativo de la incidencia.</div>',form=>change('correct',{id,...form,linked_account_id:replace?null:d.unit.linked_account_id},d.order.id));
+  const d=await api('/api/services/unit/'+id);modal('Reemplazar cuenta con problema',field('email','Correo de la cuenta de reemplazo','','email')+field('password','Contraseña actual','','password')+field('new_password','Contraseña nueva que deseas','','password')+'<div class="notice">No hay un cobro adicional. Se conserva la fecha máxima del trabajo; el administrador puede modificarla.</div>',form=>change('correct',{id,...form},d.order.id));
  };
- handlers['changes-refund-request']=id=>{const u=X().units.find(u=>u.id===id);return change('refund_request',{id},u.order_id);};
+ handlers['changes-refund-request']=id=>{const u=X().units.find(u=>u.id===id),o=orderBy(u.order_id);if(confirm('¿Cancelar solo esta cuenta y devolver '+money(o.unit_cents)+' a tu saldo interno? No se devuelve dinero al banco.'))return change('refund_request',{id},u.order_id);};
+ handlers['changes-set-password']=id=>modal('Indicar contraseña nueva',field('requested_password','Contraseña nueva solicitada','','password'),async d=>{await api('/api/services/units/'+id+'/requested-password',{requested_password:d.requested_password});await load();toast('Contraseña solicitada guardada.');});
  handlers['changes-refund-approve']=async id=>{const u=X().units.find(u=>u.id===id),o=orderBy(u.order_id);if(confirm('Se cancelará únicamente esta unidad y se devolverán '+money(o.unit_cents)+' al saldo del mayorista, sin pago al ejecutor. ¿Confirmas?'))await change('refund_approve',{id},o.id);};
  handlers['changes-notifications']=()=>modal('Avisos pendientes',X().notifications.length?X().notifications.slice().sort((a,b)=>b.created_at.localeCompare(a.created_at)).map(n=>'<section class="panel"><p>'+esc(n.message)+'</p><small>'+date(n.created_at)+'</small> '+click('Abrir aviso','notification',n.id)+'</section>').join(''):empty('No tienes avisos'),null,true);
  handlers['changes-notification']=async id=>{const n=X().notifications.find(n=>n.id===id);await api('/api/services/command',{action:'notification_read',payload:{id}});await load();if(n.unit_id)await showUnit(n.unit_id);else await showOrderChanges(n.order_id);};
@@ -240,9 +243,9 @@
  const assignmentHandler=handlers['assignment-new'];
  handlers['assignment-new']=()=>modal('Asignar producción para stock',
   field('worker_id','Responsable (puedes elegirte)','','select',S.users.filter(u=>u.active&&!u.deleted_at&&['worker','admin'].includes(u.role)).map(u=>[u.id,u.name+(u.role==='admin'?' · administrador':'')]))+
-  field('product_id','Producto','','select',S.products.map(p=>[p.id,p.name]))+field('quantity','Cantidad',100,'number')+field('rate','Remuneración base por cuenta (USD)','0.20','number')+
+   field('product_id','Producto','','select',S.products.map(p=>[p.id,p.name]))+field('quantity','Cantidad',100,'number')+field('rate','Remuneración base por cuenta (USD)','0.20','number')+window.workDeadlineField()+
   '<div class="notice">Solo la producción con garantía por meses de trabajadores lleva 3%. Las asignaciones propias y a dominio no. La tarifa queda congelada y las garantías no generan un segundo pago.</div>',
-  d=>saveAdmin('assignments',{...d,quantity:Number(d.quantity),rate_cents:moneyInput(d.rate)}));
+   d=>saveAdmin('assignments',{...d,quantity:Number(d.quantity),rate_cents:moneyInput(d.rate),due_at:window.workDeadlineISO(d.due_at)}));
  // Existing stock payments now show the wallet discount and only request the bank difference.
  const showOrderOriginal=showOrder;
  showOrder=function(id){showOrderOriginal(id);const o=S.orders.find(o=>o.id===id);if(o?.credit_cents){const info=document.createElement('div');info.className='notice';info.textContent='Saldo a favor aplicado: '+money(o.credit_cents)+' · Diferencia bancaria: '+money(o.total_cents-o.credit_cents);$('.modal')?.append(info);}};

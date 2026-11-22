@@ -2,7 +2,7 @@ import {randomUUID,randomBytes,scryptSync} from 'node:crypto';
 const url='https://arka-digital.onrender.com',wait=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 let ready=false;
 for(let i=0;i<60;i++){
- try{const r=await fetch(url+'/healthz',{signal:AbortSignal.timeout(15000)}),h=await r.json();if(r.ok&&h.release==='purchases-notifications-20261122'&&(!process.env.GITHUB_SHA||h.commit===process.env.GITHUB_SHA)){ready=true;break;}}catch{}
+ try{const r=await fetch(url+'/healthz',{signal:AbortSignal.timeout(15000)}),h=await r.json();if(r.ok&&h.release==='password-deadlines-20261122'&&(!process.env.GITHUB_SHA||h.commit===process.env.GITHUB_SHA)){ready=true;break;}}catch{}
  await wait(10000);
 }
 if(!ready)throw Error('Render aún no sirve la revisión esperada. No se afirma que esté publicada.');
@@ -21,12 +21,19 @@ try{
   if(!cookie)throw Error('No se recibió sesión de verificación');
   const r=await fetch(url+'/api/state',{headers:{Cookie:cookie}}),state=await r.json();
   if(!r.ok||state.user?.role!==user.role||!state.services||!Array.isArray(state.services.orders))throw Error('Estado inválido para '+user.role);
+   if(!Number.isFinite(Date.parse(state.server_now)))throw Error('No se recibió hora del servidor para las cuentas regresivas');
+   if(state.services.offers.some(o=>o.mode!=='password'))throw Error('Aún se ofrecen cambios de correo');
+   if(state.assignments.some(a=>!Object.hasOwn(a,'due_at')||!Object.hasOwn(a,'work_submitted_at')))throw Error('Faltan columnas de plazos en asignaciones');
+   if(user.role!=='admin'){
+    const denied=await fetch(url+'/api/work/deadline',{method:'POST',headers:{Cookie:cookie,Origin:url,'Content-Type':'application/json'},body:JSON.stringify({kind:'production',id:user.id,due_at:new Date(Date.now()+86400000).toISOString()})});
+    if(denied.status!==403)throw Error('Un perfil no administrador puede intentar cambiar plazos');
+   }
   if(user.role==='admin'&&!state.services.finance?.storage)throw Error('El panel financiero no pudo consultar la base real');
   if(user.role!=='admin'&&state.services.finance)throw Error('Se expuso información financiera de administrador');
   if(user.role!=='admin'&&state.services.orders.length)throw Error('Una cuenta nueva recibió pedidos ajenos');
  }
  const guest=await fetch(url+'/api/services/state');if(guest.status!==401)throw Error('La API de servicios no está protegida');
- for(const file of ['/services.js?v=20261122-3','/services.css?v=20261122-2','/purchases.js?v=20261122-2','/notifications.js?v=20261122-2'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
+ for(const file of ['/services.js?v=20261122-4','/services.css?v=20261122-4','/deadlines.js?v=20261122-4','/purchases.js?v=20261122-2','/notifications.js?v=20261122-2'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
  console.log('RENDER_RUNTIME_OK: revisión publicada; salud de base de datos, sesiones de tres roles, finanzas y recursos nuevos verificados.');
 }finally{
  await sql('delete from arka_users where id in('+users.map(u=>quote(u.id)).join(',')+') and email like '+quote('qa_release_%_'+tag+'@example.invalid'));

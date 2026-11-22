@@ -6,4 +6,5 @@
 .notifications-trigger{white-space:nowrap}.field select[multiple]{min-height:120px}.modal .change-instructions{max-width:100%}
 .badge.blocked,.badge.refund_requested{background:#fff1ce;color:#784a00}.badge.approved{background:#e7faf1;color:#176b4d}
 .purchase-value{display:block;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;max-width:310px;margin:0 0 8px;font-size:13px;user-select:text}.notification-sound-toggle{white-space:nowrap;font-size:11px;padding:8px}
+.work-deadline{display:flex;flex-direction:column;gap:5px;min-width:180px;max-width:260px;white-space:normal;font-size:12px}.work-deadline strong{font-variant-numeric:tabular-nums;color:#257857}.work-deadline .overdue{color:#b22236}
 @media(max-width:760px){.change-offers{grid-template-columns:1fr}.change-finance-line{align-items:stretch;flex-direction:column}.top-actions{gap:6px;flex-wrap:wrap}.notifications-trigger{font-size:11px;padding:7px}.modal .row-actions{flex-wrap:wrap}.change-instructions{padding:12px;font-size:12px}}

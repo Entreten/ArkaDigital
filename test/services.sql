@@ -32,7 +32,7 @@ begin
  perform arka_command(admin,'approve_order',jsonb_build_object('id',stock_order));
  perform pg_temp.assert_ok((select count(*)=1 from arka_sales where order_id=stock_order),'stock sale is snapshotted');
  -- Create a modification order without involving inventory.
- insert into arka_change_offers(name,mode,price_cents,margin_cents,workers) values('TEST CHANGE','both',25,5,array[worker,other_worker]) returning id into offer;
+ insert into arka_change_offers(name,mode,price_cents,margin_cents,workers) values('TEST CHANGE','password',25,5,array[worker,other_worker]) returning id into offer;
  result:=arka_changes(buyer,'create',jsonb_build_object('offer_id',offer,'acknowledged',true,'request_cipher','not-real',
   'accounts',jsonb_build_array(jsonb_build_object('cipher','original1','fingerprint','external1','suggestion_cipher','suggest1'),jsonb_build_object('cipher','original2','fingerprint','external2','suggestion_cipher','suggest2'))));
  oid:=(result->>'id')::uuid;
@@ -40,7 +40,7 @@ begin
  select id into uid2 from arka_change_units where order_id=oid and position=2;
  perform arka_changes(buyer,'payment',jsonb_build_object('id',oid,'bank_id',bank,'sender','TEST','transaction_code','code','payment_date',current_date,'paid_cents',50));
  perform arka_changes(admin,'verify_payment',jsonb_build_object('id',oid));
- perform arka_changes(admin,'assign',jsonb_build_object('id',oid,'allocations',jsonb_build_array(jsonb_build_object('worker_id',worker,'quantity',1),jsonb_build_object('worker_id',admin,'quantity',1))));
+ perform arka_changes(admin,'assign',jsonb_build_object('id',oid,'due_at',now()+interval '1 day','allocations',jsonb_build_array(jsonb_build_object('worker_id',worker,'quantity',1),jsonb_build_object('worker_id',admin,'quantity',1))));
  perform pg_temp.assert_ok((select worker_id=worker from arka_change_units where id=uid),'worker assignment');
  perform pg_temp.assert_ok((select worker_id=admin from arka_change_units where id=uid2),'admin assignment');
  perform arka_changes(worker,'accept',jsonb_build_object('id',uid));
@@ -72,12 +72,11 @@ begin
  update arka_change_offers set price_cents=100,margin_cents=50,workers='{}' where id=offer;
  perform arka_changes(buyer,'payment',jsonb_build_object('id',oid,'bank_id',bank,'sender','TEST','transaction_code','code2','payment_date',current_date,'paid_cents',25));
  perform arka_changes(admin,'verify_payment',jsonb_build_object('id',oid));
- perform arka_changes(admin,'assign',jsonb_build_object('id',oid,'allocations',jsonb_build_array(jsonb_build_object('worker_id',worker,'quantity',1))));
+ perform arka_changes(admin,'assign',jsonb_build_object('id',oid,'due_at',now()+interval '1 day','allocations',jsonb_build_array(jsonb_build_object('worker_id',worker,'quantity',1))));
  perform arka_changes(worker,'problem',jsonb_build_object('id',uid,'reason','Sin suscripción'));
  perform arka_changes(buyer,'correct',jsonb_build_object('id',uid,'cipher','corrected','fingerprint','refund1','suggestion_cipher','s'));
  perform arka_changes(worker,'problem',jsonb_build_object('id',uid,'reason','Sigue bloqueada'));
  perform arka_changes(buyer,'refund_request',jsonb_build_object('id',uid));
- perform arka_changes(admin,'refund_approve',jsonb_build_object('id',uid));
  perform pg_temp.assert_ok((select credit_cents=25 from arka_users where id=buyer),'exact refund to wallet');
  perform pg_temp.assert_ok((select status='delivered' from arka_change_orders where id=oid),'last cancellation auto-completes refunded order');
  perform pg_temp.assert_ok((select balance_cents=before_balance+20 from arka_users where id=worker),'cancelled work never paid');

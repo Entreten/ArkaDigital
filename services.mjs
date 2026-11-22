@@ -1,5 +1,6 @@
 import {randomBytes} from 'node:crypto';
-import {emailValid,suggestEmail,validateChange,parseAccounts} from './lib/change-rules.mjs';
+import {emailValid,validateChange,parsePasswordChanges} from './lib/change-rules.mjs';
+import {futureDeadline} from './lib/work-deadlines.mjs';
 import {workbook} from './lib/xlsx.mjs';
 export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,number}){
  const one=async(table,id)=>{const[r]=await db(table+'?id=eq.'+encodeURIComponent(id)+'&limit=1');if(!r)throw fail('Registro no encontrado',404);return r;};
@@ -19,14 +20,10 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   }
   if(o.status!=='processing')throw fail('Los datos se habilitan tras verificar el pago.',403);
   if(user.role==='wholesale'&&!['blocked','refund_requested'].includes(unit.status))throw fail('Los resultados se entregan juntos al finalizar el pedido.',403);
-  const request=unseal(o.request_cipher)||{};let original=unseal(secret?.original_cipher);
+  const savedRequest=unseal(secret?.requested_cipher)||unseal(o.request_cipher)||{},request={requested_password:savedRequest.requested_password??savedRequest.fixed_password??''};let original=unseal(secret?.original_cipher);
   if(!original&&unit.linked_account_id){const a=await one('arka_accounts',unit.linked_account_id);if(a.buyer_id!==o.buyer_id)throw fail('Cuenta vinculada no disponible.',403);original=unseal(a.cipher);}
   original=original||{};
-  const response={unit,order:{id:o.id,number:o.number,mode:o.mode,offer_name:o.offer_name,unit_cents:o.unit_cents,margin_cents:o.margin_cents,instructions:o.instructions},request,original,suggestion:unseal(secret?.suggestion_cipher)};
-  if(o.status==='processing'&&original&&response.suggestion){
-   try{validateChange(o.mode,original,response.suggestion,request);}
-   catch{response.suggestion={email:o.mode==='password'?original.email:suggestEmail(request.pattern),password:o.mode==='email'?original.password:(request.requested_password??request.fixed_password??'')};}
-  }
+  const response={unit,order:{id:o.id,number:o.number,mode:o.mode,offer_name:o.offer_name,unit_cents:o.unit_cents,margin_cents:o.margin_cents,instructions:o.instructions},request,original,suggestion:{email:original.email,password:request.requested_password}};
   if(user.role!=='wholesale')response.result=unseal(secret?.result_cipher);
   return response;
  }
@@ -35,14 +32,15 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   if(a.buyer_id!==user.id||a.status!=='sold'||p.mode!=='duration'||new Date(a.expires_at)<=new Date())throw fail('Selecciona una cuenta tuya con garantía por duración vigente.');
   return {data:unseal(a.cipher),id:a.id};
  }
- async function prepareAccount(user,input,request,mode,useLinkedData=true,usedEmails=new Set()){
+ async function prepareAccount(user,input,request,mode,useLinkedData=true){
   let original=input,link=null;
-  if(input.linked_account_id){const a=await linked(user,input.linked_account_id);if(useLinkedData)original=a.data;link=a.id;}
+  if(input.linked_account_id)throw fail('Ingresa únicamente correo y contraseñas; no se vinculan compras.');
   const normalized={email:String(original.email||'').trim().toLowerCase(),password:String(original.password||'')};
   const encrypted=accountInput(normalized);
-  let email=normalized.email;if(mode!=='password'){do{email=suggestEmail(request.pattern);}while(usedEmails.has(email));}usedEmails.add(email);
-  const suggestion={email,password:mode==='email'?normalized.password:(request.requested_password??request.fixed_password??'')};
-  return {...encrypted,cipher:link&&useLinkedData?null:encrypted.cipher,linked_account_id:link,suggestion_cipher:seal(suggestion)};
+  const desired=String(input.new_password??request.requested_password??request.fixed_password??'');
+  if(!desired||desired.length>500)throw fail('Cada cuenta necesita la contraseña nueva solicitada, de hasta 500 caracteres.');
+  const suggestion={email:normalized.email,password:desired};
+  return {...encrypted,cipher:encrypted.cipher,linked_account_id:null,suggestion_cipher:seal(suggestion),requested_cipher:seal({requested_password:desired})};
  }
  app.get('/api/services/state',async(req,res)=>res.json(await state(req.user)));
  app.get('/api/services/orders/:id/instructions',async(req,res)=>{
@@ -51,6 +49,11 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   res.json({order:{id:o.id,number:o.number,mode:o.mode,instructions:o.instructions},request:unseal(o.request_cipher)||{}});
  });
  app.get('/api/services/unit/:id',async(req,res)=>res.json(await details(req.user,req.params.id)));
+ app.post('/api/services/units/:id/requested-password',async(req,res)=>{
+  allowed(req.user,['admin','wholesale']);const requested=String(req.body.requested_password||'');
+  if(!requested||requested.length>500)throw fail('Indica la contraseña nueva solicitada, hasta 500 caracteres.');
+  res.json(await db('rpc/arka_set_unit_requested_password',{method:'POST',body:{actor:req.user.id,target:req.params.id,desired_cipher:seal({requested_password:requested})}}));
+ });
  app.get('/api/services/orders/:id/export',async(req,res)=>{
   allowed(req.user,['wholesale']);const o=await orderAccess(req.user,req.params.id);
   if(o.status!=='delivered'||!o.access_until||new Date(o.access_until)<=new Date()||o.purged_at)throw fail('El plazo para exportar terminó.',410);
@@ -64,7 +67,7 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
  app.post('/api/services/offers',async(req,res)=>{
   allowed(req.user,['admin']);const b=req.body,price=number(b.price_cents,1),margin=number(b.margin_cents);
   if(margin>price)throw fail('Tu parte no puede superar el precio al mayorista.');
-  if(!['email','password','both'].includes(b.mode)||clean(b.name,150).length<2)throw fail('Completa nombre y modalidad.');
+  if(b.mode!=='password'||clean(b.name,150).length<2)throw fail('Este servicio solo permite cambios de contraseña; completa el nombre.');
   const workers=Array.isArray(b.workers)?[...new Set(b.workers)]:[];
   for(const id of workers){const u=await one('arka_users',id);if(!['worker','admin'].includes(u.role)||!u.active||u.deleted_at)throw fail('Selecciona trabajadores activos.');}
   const body={name:clean(b.name,150),mode:b.mode,price_cents:price,margin_cents:margin,instructions:clean(b.instructions,3000),active:b.active!==false,workers};
@@ -75,28 +78,31 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   if(!['create','notification_read','payment','verify_payment','cancel','assign','deliver','accept','submit','approve','reject','problem','correct','refund_request','refund_approve','refund_reject'].includes(action))throw fail('Operación desconocida');
   if(action==='create'){
    allowed(req.user,['wholesale']);const offer=await one('arka_change_offers',payload.offer_id);
-   const base=String(payload.email_base||'').trim().toLowerCase(),domain=String(payload.email_domain||'').trim().toLowerCase().replace(/^@/,'');
-   if((payload.email_base||payload.email_domain)&&(!/^[a-z0-9][a-z0-9._+-]{0,44}$/i.test(base)||domain.length>253||!domain.includes('.')||!/^[a-z0-9.-]+$/.test(domain)))throw fail('Separa el nombre/base del correo (hasta 45 caracteres) y un dominio válido sin @.');
-   const request={pattern:base||domain?base+'@'+domain:clean(payload.pattern,320).toLowerCase(),requested_password:String(payload.requested_password??payload.fixed_password??'')};
-   if(offer.mode!=='password'&&!emailValid(request.pattern))throw fail('Indica el ejemplo de correo de un dominio que puedas utilizar.');
-   if(offer.mode!=='email'&&(!request.requested_password||request.requested_password.length>500))throw fail('Indica la contraseña nueva que deseas, de hasta 500 caracteres. No se asigna ninguna contraseña predeterminada.');
-   const inputs=Array.isArray(payload.accounts)?payload.accounts:parseAccounts(payload.text);
+   if(offer.mode!=='password')throw fail('Actualiza la página: solo se ofrecen cambios de contraseña.');
+   const request={requested_password:String(payload.requested_password??payload.fixed_password??'')};
+   if(request.requested_password.length>500)throw fail('La contraseña nueva no puede superar 500 caracteres.');
+   const inputs=Array.isArray(payload.accounts)?payload.accounts:parsePasswordChanges(payload.text);
    if(inputs.some(input=>input.linked_account_id))throw fail('Este servicio solo acepta cuentas ingresadas manualmente; no se vincula a compras anteriores.');
    if(!inputs.length||inputs.length>1000)throw fail('Carga entre 1 y 1000 cuentas.');
-   const accounts=[],seen=new Set(),usedEmails=new Set();for(const input of inputs){const a=await prepareAccount(req.user,input,request,offer.mode,true,usedEmails);if(seen.has(a.fingerprint))throw fail('Hay cuentas de origen duplicadas.');seen.add(a.fingerprint);accounts.push(a);}
+   const accounts=[],seen=new Set();for(const input of inputs){const a=await prepareAccount(req.user,input,request,offer.mode);if(seen.has(a.fingerprint))throw fail('Hay cuentas de origen duplicadas.');seen.add(a.fingerprint);accounts.push(a);}
    payload={offer_id:offer.id,accounts,request_cipher:seal(request),acknowledged:payload.acknowledged===true};
+  }else if(action==='assign'){
+   allowed(req.user,['admin']);
+   if(!Array.isArray(payload.allocations)||!payload.allocations.length||payload.allocations.length>100)throw fail('Reparto no válido');
+   try{payload.allocations=payload.allocations.map(x=>({worker_id:x.worker_id,quantity:number(x.quantity,1,1000),due_at:futureDeadline(x.due_at||payload.due_at)}));}catch(e){throw fail(e.message);}
+  }else if(action==='accept'){
+   const d=await details(req.user,payload.id);
+   if(!d.request.requested_password)throw fail('El cliente debe indicar primero la contraseña nueva solicitada.');
   }else if(action==='submit'){
    allowed(req.user,['admin','worker']);const d=await details(req.user,payload.id);
    if(d.unit.worker_id!==req.user.id)throw fail('Esta unidad no te está asignada.',403);
-   const result={email:String(payload.email||'').trim().toLowerCase(),password:String(payload.password||'')};
+   if(payload.confirmed_work!==true)throw fail('Confirma que ya cambiaste la contraseña en la plataforma externa.');
+   const result={email:d.original.email,password:d.request.requested_password};
    try{validateChange(d.order.mode,d.original,result,d.request);}catch(e){throw fail(e.message);}
    payload={id:d.unit.id,...accountInput(result)};
   }else if(action==='correct'){
-   allowed(req.user,['wholesale']);const d=await details(req.user,payload.id),a=await prepareAccount(req.user,payload,d.request,d.order.mode,false);
+   allowed(req.user,['wholesale']);const d=await details(req.user,payload.id),a=await prepareAccount(req.user,{...payload,new_password:payload.new_password??d.request.requested_password},d.request,'password',false);
    payload={id:d.unit.id,...a};
-  }else if(action==='assign'){
-   allowed(req.user,['admin']);if(!Array.isArray(payload.allocations)||payload.allocations.length>100)throw fail('Reparto no válido');
-   payload.allocations=payload.allocations.map(a=>({worker_id:a.worker_id,quantity:number(a.quantity,1,1000)}));
   }else if(action==='payment'){payload.paid_cents=number(payload.paid_cents);payload.transaction_code=clean(payload.transaction_code,150);payload.sender=clean(payload.sender,150);}
   else if(['problem','reject','refund_approve','refund_reject'].includes(action))payload.reason=clean(payload.reason,2000);
   res.json(await db('rpc/arka_changes',{method:'POST',body:{actor:req.user.id,action,payload}}));
@@ -119,11 +125,12 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   const activeUnitIds=units.filter(u=>activeIds.includes(u.order_id)).map(u=>u.id);
   const secrets=[];for(let start=0;start<activeUnitIds.length;start+=100)secrets.push(...await all('arka_change_secrets','unit_id=in.('+activeUnitIds.slice(start,start+100).join(',')+')'));
   const emailMap=new Map(secrets.map(s=>[s.unit_id,unseal(s.original_cipher)?.email||'']));
+   const secretsMap=new Map(secrets.map(s=>[s.unit_id,s])),ordersMap=new Map(orders.map(o=>[o.id,o]));
   const notifications=await all('arka_change_notifications','user_id=eq.'+user.id+'&order=created_at.desc&limit=200');
   const result={
    offers:await all('arka_change_offers',admin?'':'active=eq.true','id,name,mode,price_cents,margin_cents,instructions,active,workers'),
    orders:orders.map(({request_cipher,...o})=>o),
-   units:units.map(({source_fingerprint,result_fingerprint,...unit})=>({...unit,email:emailMap.get(unit.id)||''})),
+    units:units.map(({source_fingerprint,result_fingerprint,...unit})=>{const request=unseal(secretsMap.get(unit.id)?.requested_cipher)||unseal(ordersMap.get(unit.order_id)?.request_cipher)||{};return {...unit,email:emailMap.get(unit.id)||'',needs_password:!(request.requested_password??request.fixed_password)};}),
    notifications,
    wallet:buyer?await all('arka_wallet','buyer_id=eq.'+user.id+'&order=created_at.desc'):[],
    credit_cents:buyer?(await one('arka_users',user.id)).credit_cents:0
