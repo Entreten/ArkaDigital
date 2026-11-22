@@ -19,6 +19,15 @@ console.log('AUDIT_FINANCE',JSON.stringify(await query(`select json_build_object
 const services=await api('render','/services?limit=100');
 for(const entry of services){const s=entry.service||entry;if(s.repo?.toLowerCase().includes('entreten/arkadigital'))console.log('AUDIT_RENDER',JSON.stringify({name:s.name,type:s.type,branch:s.branch,autoDeploy:s.autoDeploy,url:s.serviceDetails?.url,plan:s.serviceDetails?.plan,suspended:s.suspended}));}
 console.log('READ_ONLY_AUDIT_OK: no se modificaron datos ni servicios.');
+console.log('AUDIT_VIX_SERVICES',JSON.stringify(await query(`
+select o.id,o.number,o.offer_name,o.status,o.quantity,o.total_cents,o.credit_cents,
+ translate(lower(u.name),'áéíóúüñ','aeiouun') like '%jose%fernandez%' jose_match,
+ (select json_agg(t) from(select cu.status,count(*) quantity,count(*) filter(where lower(w.name) like '%viviana%') viviana_units from arka_change_units cu left join arka_users w on w.id=cu.worker_id where cu.order_id=o.id group by cu.status)t) units,
+ (select coalesce(sum(l.amount_cents),0) from arka_ledger l join arka_change_units cu on cu.id=l.reference_id where cu.order_id=o.id) worker_pay_cents,
+ (select coalesce(sum(f.amount_cents),0) from arka_finance f where f.reference_id=o.id) finance_cents,
+ (select coalesce(sum(amount_cents),0) from arka_wallet where reference_id=o.id) wallet_cents
+from arka_change_orders o join arka_users u on u.id=o.buyer_id where lower(o.offer_name) like '%vix%' order by o.created_at
+`)));
 console.log('AUDIT_PURCHASES',JSON.stringify(await query(`
  select o.id,
  case when translate(lower(u.name),'áéíóúüñ','aeiouun') like '%jose%fernandez%' then 'official_jose_fernandez'
