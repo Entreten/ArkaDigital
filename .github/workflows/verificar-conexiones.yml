@@ -45,3 +45,12 @@ jobs:
               summary.write('\n'.join(lines) + '\n')
           sys.exit(1 if failed else 0)
           PY
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inspeccionar estructura y totales sin modificar datos
+        env:
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/audit-readonly.mjs
