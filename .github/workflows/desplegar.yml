@@ -98,4 +98,6 @@ jobs:
       - name: Retirar solo las pruebas confirmadas y preservar la compra oficial
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-        run: node scripts/cleanup-test-purchases.mjs
+        run: |
+          node scripts/migrate.mjs
+          node scripts/cleanup-test-purchases.mjs

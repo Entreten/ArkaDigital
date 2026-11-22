@@ -72,6 +72,17 @@ create table if not exists public.arka_change_notifications(
  id uuid primary key default gen_random_uuid(),user_id uuid not null references arka_users(id),
  order_id uuid not null,unit_id uuid,message text not null,read_at timestamptz,created_at timestamptz not null default now());
 create index if not exists arka_change_notifications_user on arka_change_notifications(user_id,created_at desc);
+-- The owner removed automatic linkage to previous purchases. Preserve service input/results,
+-- then detach legacy requests so their completion cannot modify an original stock purchase.
+update arka_change_secrets secrets set original_cipher=coalesce(secrets.original_cipher,a.cipher)
+ from arka_change_units unit join arka_change_orders orders on orders.id=unit.order_id
+ join arka_accounts a on a.id=unit.linked_account_id
+ where secrets.unit_id=unit.id and unit.linked_account_id is not null and orders.status in('pending','payment_review','processing');
+update arka_change_secrets secrets set result_cipher=coalesce(secrets.result_cipher,a.cipher)
+ from arka_change_units unit join arka_change_orders orders on orders.id=unit.order_id
+ join arka_accounts a on a.id=unit.linked_account_id
+ where secrets.unit_id=unit.id and unit.linked_account_id is not null and orders.status='delivered' and orders.access_until>now();
+update arka_change_units set linked_account_id=null where linked_account_id is not null;
 do $$ declare t text; begin foreach t in array array['arka_finance_settings','arka_wallet','arka_costs','arka_finance','arka_sales','arka_receipts','arka_change_offers','arka_change_orders','arka_change_units','arka_change_secrets','arka_change_history','arka_change_notifications'] loop
  execute format('alter table public.%I enable row level security',t);
  execute format('revoke all on public.%I from anon,authenticated',t);
