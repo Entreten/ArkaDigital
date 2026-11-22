@@ -1,6 +1,12 @@
 name: Construir y desplegar ARKA DIGITAL
 on:
   workflow_dispatch:
+    inputs:
+      phase:
+        description: Verificar, preparar base o publicar
+        type: choice
+        options: [validate, migrate, deploy]
+        default: validate
 permissions:
   contents: read
 concurrency:
@@ -10,6 +16,20 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: test-only
+          POSTGRES_DB: arka_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,7 +38,30 @@ jobs:
       - run: npm install --ignore-scripts
       - run: npm test
       - run: npm run check
+      - name: Probar migraciones, dinero y permisos en base aislada
+        env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: postgres
+          PGPASSWORD: test-only
+          PGDATABASE: arka_test
+        run: |
+          psql -v ON_ERROR_STOP=1 -c 'create role anon; create role authenticated; create role service_role;'
+          psql -v ON_ERROR_STOP=1 -1 -f database/schema.sql
+          psql -v ON_ERROR_STOP=1 -1 -f database/services.sql
+          psql -v ON_ERROR_STOP=1 -f test/services.sql
+          psql -v ON_ERROR_STOP=1 -1 -f database/services.sql
+      - run: npm install --no-save --package-lock=false --ignore-scripts playwright
+      - run: npx playwright install --with-deps --only-shell chromium
+      - name: Probar pantallas en escritorio y móvil sin datos reales
+        run: node scripts/services-ui-check.mjs
+      - name: Preparar Supabase antes de cambiar la web publicada
+        if: inputs.phase == 'migrate'
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+        run: node scripts/migrate.mjs
       - name: Configurar Supabase y desplegar Render
+        if: inputs.phase == 'deploy'
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
