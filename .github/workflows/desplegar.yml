@@ -54,10 +54,12 @@ jobs:
           psql -v ON_ERROR_STOP=1 -1 -f database/sales-cleanup.sql
           psql -v ON_ERROR_STOP=1 -1 -f database/password-deadlines.sql
           psql -v ON_ERROR_STOP=1 -1 -f database/notification-lifecycle.sql
+          psql -v ON_ERROR_STOP=1 -1 -f database/edit-assignments.sql
           psql -v ON_ERROR_STOP=1 -f test/services.sql
           psql -v ON_ERROR_STOP=1 -f test/notifications.sql
           psql -v ON_ERROR_STOP=1 -f test/password-deadlines.sql
           psql -v ON_ERROR_STOP=1 -f test/notification-lifecycle.sql
+          psql -v ON_ERROR_STOP=1 -f test/edit-assignments.sql
           psql -v ON_ERROR_STOP=1 -f test/historical.sql
           psql -v ON_ERROR_STOP=1 -1 -f database/services.sql
           psql -v ON_ERROR_STOP=1 -f test/cleanup-history.sql

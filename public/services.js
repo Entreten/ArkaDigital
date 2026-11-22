@@ -105,7 +105,7 @@
    h+='<div class="row-actions">'+click('Asignar pendientes','assign',id)+click('Repartir entre los que yo elija','split',id)+'</div>';
    const ready=unitRows(o).every(u=>u.status==='approved'||u.status==='cancelled'&&u.refunded_at);
    h+='<p class="notice">La entrega y el reparto de ganancias se realizan automáticamente al aprobar la última unidad, siempre que las canceladas ya tengan su devolución registrada.</p>'+(ready?click('Completar entrega pendiente','deliver',id,'primary'):'');
-   h+=table(['Responsable','Asignadas','Aprobadas'],[...new Set(unitRows(o).map(u=>u.worker_id).filter(Boolean))].map(w=>[esc(nameOf(w)),unitRows(o).filter(u=>u.worker_id===w).length,unitRows(o).filter(u=>u.worker_id===w&&u.status==='approved').length]));
+   h+=table(['Responsable','Asignadas','Aprobadas','Corregir asignación'],[...new Set(unitRows(o).map(u=>u.worker_id).filter(Boolean))].map(w=>[esc(nameOf(w)),unitRows(o).filter(u=>u.worker_id===w).length,unitRows(o).filter(u=>u.worker_id===w&&u.status==='approved').length,o.status==='processing'&&unitRows(o).some(u=>u.worker_id===w&&['assigned','rejected'].includes(u.status))?btn('Editar','work-assignment-edit','service:'+id+':'+w)+btn('Eliminar asignación','work-assignment-delete','service:'+id+':'+w):'<small>Sin unidades pendientes de envío</small>']));
   }
   if(o.status==='delivered'){
    h+='<div class="notice">Entregado: '+date(o.delivered_at)+'. Plazo de datos: '+date(o.access_until)+'.</div>';

@@ -102,6 +102,12 @@ app.post('/api/work/deadline',async(req,res)=>{
  const result=await db('rpc/arka_set_work_deadline',{method:'POST',body:{actor:req.user.id,kind:req.body.kind,target:req.body.id,new_due:due}});
  res.json(result);notifyLiveClients();
 });
+app.post('/api/work/assignment',async(req,res)=>{
+ if(req.user.role!=='admin')throw fail('Solo el administrador puede editar o quitar asignaciones.',403);
+ const b=req.body;
+ const result=await db('rpc/arka_edit_assignment',{method:'POST',body:{actor:req.user.id,kind:b.kind,target:b.id,operation:b.operation,data:b.data||{}}});
+ res.json(result);notifyLiveClients();
+});
 app.get('/api/notifications',async(req,res)=>res.json({notifications:await db('rpc/arka_active_notifications',{method:'POST',body:{actor:req.user.id}})}));
 app.post('/api/notifications/read',async(req,res)=>{
  const filter=req.body.all===true?'':'&id=eq.'+encodeURIComponent(clean(req.body.id,80));

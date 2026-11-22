@@ -1,0 +1,12 @@
+/* A modest text-only increase. No layout scaling, JavaScript or business rules. */
+body{font-size:17px}
+.small,.login-foot,.field,.nav-btn,.breadcrumb,.profile,.page-head p,.hero p,.empty,.error,.toast,.checkbox{font-size:13px}
+.field input,.field select,.field textarea,.search{font-size:15px}
+.nav-label,.tag,th,.badge{font-size:10px}
+.eyebrow,.profile small,.stock,.price small,.details,.account-data label,.theme-option{font-size:11px}
+.sidebar-foot,.chip,.section-title small,.product-body p,.metric small,.notice,.ad-message,.subtle,.purchase-group p{font-size:12px}
+.product-body h3{font-size:15px}.panel h3{font-size:16px}
+table{font-size:12px}.account-data,.purchase-value,.change-instructions{font-size:14px}
+.purchase-group h4,.work-deadline{font-size:14px}
+.notification-sound-toggle,.notifications-trigger{font-size:12px}
+@media(max-width:760px){.product-body h3{font-size:13px}.hero p{font-size:12px}.top-actions button{font-size:11px}.change-instructions{font-size:13px}}
