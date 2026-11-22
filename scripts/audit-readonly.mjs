@@ -19,3 +19,14 @@ console.log('AUDIT_FINANCE',JSON.stringify(await query(`select json_build_object
 const services=await api('render','/services?limit=100');
 for(const entry of services){const s=entry.service||entry;if(s.repo?.toLowerCase().includes('entreten/arkadigital'))console.log('AUDIT_RENDER',JSON.stringify({name:s.name,type:s.type,branch:s.branch,autoDeploy:s.autoDeploy,url:s.serviceDetails?.url,plan:s.serviceDetails?.plan,suspended:s.suspended}));}
 console.log('READ_ONLY_AUDIT_OK: no se modificaron datos ni servicios.');
+console.log('AUDIT_PURCHASES',JSON.stringify(await query(`
+ select o.id,
+ case when translate(lower(u.name),'áéíóúüñ','aeiouun') like '%jose%fernandez%' then 'official_jose_fernandez'
+ when lower(u.name) like '%juan%' then 'test_juan' else 'other_buyer' end buyer_class,
+ o.status,o.total_cents,o.credit_cents,o.delivered_at,
+ (select coalesce(sum(i.quantity),0) from arka_items i where i.order_id=o.id) quantity,
+ (select count(*) from arka_reports r join arka_accounts a on a.id=r.account_id where a.order_id=o.id and r.status in('open','escalated')) open_reports,
+ (select coalesce(sum(c.base_cents),0) from arka_costs c join arka_accounts a on a.id=c.account_id where a.order_id=o.id) production_base,
+ (select coalesce(sum(c.fee_cents),0) from arka_costs c join arka_accounts a on a.id=c.account_id where a.order_id=o.id) production_fee
+ from arka_orders o join arka_users u on u.id=o.buyer_id order by o.created_at
+`)));
