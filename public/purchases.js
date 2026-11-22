@@ -27,6 +27,7 @@
   const row=searchRows?.find(r=>r.account_id===id);if(!row)return;const term=searchTerm;
   if(!row.item_id){showOrder(row.order_id);return;}
   await showPurchase(row.item_id);
+  if(row.status==='purged'){toast('Pedido localizado. Los datos de esa cuenta ya se eliminaron según su plazo de conservación.');return;}
   const input=$('#purchase-search');if(input&&modalDetail?.type==='purchase'&&modalDetail.id===row.item_id){input.value=term;input.dispatchEvent(new Event('input',{bubbles:true}));}
  };
  const plain=a=>[a.email,a.password,a.observation||''].map(value=>String(value||'').replace(/[\r\n\t]+/g,' ')).join('\t');

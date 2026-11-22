@@ -73,7 +73,7 @@ try{
       if(await page.locator('table').first().evaluate(el=>parseFloat(getComputedStyle(el).fontSize))<12)throw Error('No aumentó la letra de las tablas');
       await page.locator('[data-action="work-assignment-edit"]').click();await page.locator('[name="quantity"]').waitFor();await page.locator('[data-action="close"]').first().click();
       await page.locator('[data-action="work-assignment-delete"]').click();await page.locator('[name="confirm"]').waitFor();await page.locator('[data-action="close"]').first().click();
-      await page.evaluate(()=>handlers['changes-order']('change1'));await page.locator('[data-action="work-assignment-edit"]').click();await page.locator('[name="quantity"]').waitFor();await page.locator('[data-action="close"]').first().click();
+      await page.evaluate(()=>handlers['changes-order']('change1'));await page.locator('.modal [data-action="work-assignment-edit"]').click();await page.locator('[name="quantity"]').waitFor();await page.locator('[data-action="close"]').first().click();
      }
     await page.evaluate(()=>handlers['changes-unit']('unit-demo'));const text=await page.locator('.change-instructions').textContent();if(!text.includes('Conserva el correo actual')||text.includes('aleatorios')||text.includes('dominio'))throw Error('Continúan indicaciones de cambios de correo');
     if(await page.locator('[data-action="changes-submit"]').count()!==1||await page.locator('[data-action="changes-problem"]').count()!==1)throw Error('Faltan los dos botones por cuenta');
