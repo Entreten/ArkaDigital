@@ -38,7 +38,7 @@ try{
     if(!(await page.locator('#content h1').count()))throw Error('Falta título '+role+' '+view);
     if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2))throw Error('Desbordamiento horizontal '+role+' '+view+' '+width);
    }
-   if(role==='admin'){await page.evaluate(()=>document.querySelector('[data-nav="changes-offers"]').click());await page.locator('[data-action="changes-offer-new"]').click();await page.waitForSelector('[name="workers"]');await page.locator('[data-action="close"]').first().click();}
+   if(role==='admin'){await page.evaluate(()=>document.querySelector('[data-nav="changes-offers"]').click());await page.locator('[data-action="changes-offer-new"]').click();await page.waitForSelector('[name="name"]');if(await page.locator('[name="workers"]').count())throw Error('La oferta aún preselecciona responsables');await page.locator('[data-action="close"]').first().click();}
    await page.locator('.notification-sound-toggle').click();await page.waitForFunction(()=>document.querySelector('.notification-sound-toggle')?.textContent==='Sonido: activado');
    if(role==='wholesale'){
     await page.evaluate(()=>document.querySelector('[data-nav="purchases"]').click());await page.locator('[data-action="purchase"]').click();await page.waitForSelector('#purchase-accounts tbody tr');

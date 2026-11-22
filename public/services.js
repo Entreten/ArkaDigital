@@ -142,7 +142,6 @@
  }
  function eligible(o){return S.users.filter(u=>u.active&&!u.deleted_at&&['admin','worker'].includes(u.role));}
  function editOffer(o={}){
-  const people=S.users.filter(u=>u.active&&!u.deleted_at&&['worker','admin'].includes(u.role));
   modal(o.id?'Editar oferta':'Nueva oferta de cambios',
    field('name','Nombre',o.name)+'<p class="notice">Servicio: solo cambio de contraseña. El correo siempre se conserva.</p>'+field('price','Precio al mayorista por cuenta (USD)',Number(o.price_cents||0)/100,'number')+field('margin','Tu parte comercial por cuenta (USD)',Number(o.margin_cents||0)/100,'number')+
    '<p class="notice">Pago de ejecución = precio − tu parte. No se aplica el 3%. Los pedidos existentes conservan sus tarifas.</p>'+

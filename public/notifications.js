@@ -1,7 +1,7 @@
 /* The existing private event stream remains connected in another tab.
    Audio is opt-in per device, as required by browser autoplay policies. */
 (()=>{
- let audio=null,owner=null,seen=new Set(),initialized=false,fetching=false,stream=null,refreshTimer=null;
+ let audio=null,owner=null,seen=new Set(),initialized=false,fetching=false,stream=null,refreshTimer=null,inboxSignature='';
  const preference=()=>localStorage.getItem('arka-notification-sound')==='1';
  const tone=()=>{
   if(!preference()||audio?.state!=='running')return false;
@@ -21,7 +21,7 @@
  }
  function updateButtons(){
   const button=document.querySelector('.notification-sound-toggle');if(button){const active=preference()&&audio?.state==='running';button.textContent=active?'Sonido: activado':'Activar sonido';button.setAttribute('aria-pressed',String(active));}
-  const bell=document.querySelector('.notifications-trigger');if(bell&&S?.services){const count=S.services.notifications.filter(n=>!n.read_at).length;bell.textContent='Avisos · '+count;bell.setAttribute('aria-label',count+' avisos pendientes');}
+  const bell=document.querySelector('.notifications-trigger');if(bell&&S?.services){const count=S.services.notifications.length;bell.textContent='Avisos · '+count;bell.setAttribute('aria-label',count+' avisos pendientes');}
  }
  function sharedClaim(id){
   const key='arka-last-sounded:'+owner;let ids=[];try{ids=JSON.parse(localStorage.getItem(key)||'[]');}catch{}
@@ -43,6 +43,7 @@
   const fresh=initialized?rows.filter(n=>!seen.has(n.id)&&!n.read_at):[];
   rows.forEach(n=>seen.add(n.id));initialized=true;
   S.services.notifications=rows;updateButtons();
+  if(document.querySelector('.modal[data-notification-inbox]')&&signature(rows)!==inboxSignature)showInbox();
   // One chime for a burst, while every event remains in the durable inbox.
   if(fresh.length)announce(fresh[0]);
  }
@@ -72,9 +73,14 @@
   if(!('Notification'in window))throw Error('Este navegador no admite avisos de escritorio.');
   const permission=await Notification.requestPermission();toast(permission==='granted'?'Avisos de escritorio permitidos.':'El navegador no autorizó los avisos de escritorio. El sonido activado puede seguir funcionando.');
  };
- handlers['changes-notifications']=()=>modal('Avisos',
+ const signature=rows=>JSON.stringify(rows.map(n=>[n.id,n.read_at]));
+ function showInbox(){inboxSignature=signature(S.services.notifications);modal('Avisos pendientes',
   '<div class="row-actions">'+btn('Activar o desactivar sonido','notification-sound')+btn('Permitir avisos de escritorio','notification-desktop')+btn('Marcar todos como leídos','notification-read-all')+'</div><p class="subtle">El sonido requiere un clic de activación y que el navegador no esté silenciado. No se garantiza con el navegador cerrado o suspendido.</p>'+
-  (S.services.notifications.length?S.services.notifications.map(n=>'<section class="panel"><p>'+(n.read_at?'':'<strong>Nuevo · </strong>')+esc(n.message)+'</p><small>'+date(n.created_at)+'</small> '+btn('Abrir aviso','changes-notification',n.id)+'</section>').join(''):empty('No tienes avisos')),null,true);
+  '<p class="subtle">Los avisos de trabajo desaparecen al enviar o resolver lo pendiente. Las confirmaciones de entrega o saldo desaparecen al leerlas.</p>'+
+  (S.services.notifications.length?S.services.notifications.map(n=>'<section class="panel"><p>'+(n.read_at?'':'<strong>Nuevo · </strong>')+esc(n.message)+'</p><small>'+date(n.created_at)+'</small> '+btn('Abrir aviso','changes-notification',n.id)+'</section>').join(''):empty('No tienes avisos pendientes')),null,true);
+  const box=document.querySelector('.modal');if(box)box.dataset.notificationInbox='1';
+ }
+ handlers['changes-notifications']=showInbox;
  handlers['notification-read-all']=async()=>{await api('/api/notifications/read',{all:true});await poll();handlers['changes-notifications']();};
  handlers['changes-notification']=async id=>{
   const n=S.services.notifications.find(n=>n.id===id);if(!n)return;

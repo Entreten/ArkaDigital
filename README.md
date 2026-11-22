@@ -35,12 +35,13 @@ Comandos: npm install; npm test; npm run check; npm start.
 - Los servicios nuevos de cambios solo aceptan cuentas ingresadas manualmente. No hay selector ni vinculación automática con compras anteriores.
 - `database/services.sql` es aditivo y transaccional. El flujo de despliegue permite `validate`, `migrate` y `deploy`; las pruebas usan PostgreSQL aislado y navegador con datos ficticios.
 - No se modifica el mecanismo externo que mantiene activo Render, ni los recursos de audio o temas existentes.
-- La aprobación de la última unidad completa automáticamente el servicio y acredita una sola vez las ganancias. Sin restricciones explícitas en la oferta, el administrador puede asignar a cualquier trabajador activo.
+- La aprobación de la última unidad completa automáticamente el servicio y acredita una sola vez las ganancias. La oferta no selecciona ni restringe personas: después de verificar el pago, el administrador elige trabajadores activos y cantidades en el pedido.
 - Al asignar producción, repartir o reasignar servicios, el administrador fija fecha y hora máximas. Puede fijarlas también en reportes y trabajos anteriores pendientes. Los trabajos antiguos no reciben fechas inventadas.
 - Los contadores usan hora del servidor y muestran el atraso; no borran trabajos, bloquean envíos tardíos ni cancelan pagos. La producción deja de descontar tiempo al enviarse completa a revisión, vuelve a contar si se rechaza; cada unidad de servicio se detiene al enviarse a revisión y cada reporte al resolverse.
 - `database/password-deadlines.sql` conserva precios, salarios y entregas completadas; corrige solo ofertas y pedidos activos a contraseña. Las solicitudes antiguas ya enviadas bajo otra modalidad se devuelven a revisión para evitar aprobar cambios de correo.
 - Las compras entregadas muestran todas las credenciales del producto juntas, con copia por campo, cuenta y lote filtrado.
 - Los avisos privados cubren pedidos, pagos, asignaciones, producción, garantías y derivaciones. El sonido requiere activación del usuario; se conserva el canal en pestañas en segundo plano.
+- Los avisos de tareas se retiran del buzón al terminar la fase pendiente de cada responsable, sin borrar la trazabilidad. Las confirmaciones informativas de entrega y saldo se retiran al leerlas. El buzón abierto se actualiza con los eventos existentes.
 - El administrador puede retirar una venta de prueba con confirmación y copia privada de recuperación. No se revierten silenciosamente pagos laborales ni se devuelven cuentas usadas al stock.
 
 La instalación no trae cuentas streaming ni ventas ficticias. El administrador debe registrar productos, bancos, usuarios y stock.

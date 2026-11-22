@@ -21,6 +21,8 @@ try{
   if(!cookie)throw Error('No se recibió sesión de verificación');
   const r=await fetch(url+'/api/state',{headers:{Cookie:cookie}}),state=await r.json();
   if(!r.ok||state.user?.role!==user.role||!state.services||!Array.isArray(state.services.orders))throw Error('Estado inválido para '+user.role);
+   const inbox=await fetch(url+'/api/notifications',{headers:{Cookie:cookie}}),notifications=await inbox.json();
+   if(!inbox.ok||!Array.isArray(notifications.notifications)||notifications.notifications.some(n=>n.user_id!==user.id))throw Error('El buzón de avisos pendientes no es válido o expone otro usuario');
    if(!Number.isFinite(Date.parse(state.server_now)))throw Error('No se recibió hora del servidor para las cuentas regresivas');
    if(state.services.offers.some(o=>o.mode!=='password'))throw Error('Aún se ofrecen cambios de correo');
    if(state.assignments.some(a=>!Object.hasOwn(a,'due_at')||!Object.hasOwn(a,'work_submitted_at')))throw Error('Faltan columnas de plazos en asignaciones');
@@ -33,7 +35,7 @@ try{
   if(user.role!=='admin'&&state.services.orders.length)throw Error('Una cuenta nueva recibió pedidos ajenos');
  }
  const guest=await fetch(url+'/api/services/state');if(guest.status!==401)throw Error('La API de servicios no está protegida');
- for(const file of ['/services.js?v=20261122-4','/services.css?v=20261122-4','/deadlines.js?v=20261122-4','/purchases.js?v=20261122-2','/notifications.js?v=20261122-2'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
+ for(const file of ['/services.js?v=20261122-5','/services.css?v=20261122-4','/deadlines.js?v=20261122-4','/purchases.js?v=20261122-2','/notifications.js?v=20261122-5'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
  console.log('RENDER_RUNTIME_OK: revisión publicada; salud de base de datos, sesiones de tres roles, finanzas y recursos nuevos verificados.');
 }finally{
  await sql('delete from arka_users where id in('+users.map(u=>quote(u.id)).join(',')+') and email like '+quote('qa_release_%_'+tag+'@example.invalid'));
