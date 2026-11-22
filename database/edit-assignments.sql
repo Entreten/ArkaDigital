@@ -68,4 +68,6 @@ begin
 end $$;
 revoke all on function arka_edit_assignment(uuid,text,uuid,text,jsonb) from public,anon,authenticated;
 grant execute on function arka_edit_assignment(uuid,text,uuid,text,jsonb) to service_role;
+-- Search all of one buyer's folders without fetching or decrypting credentials.
+create index if not exists arka_account_buyer_email on arka_accounts(buyer_id,email_fingerprint);
 notify pgrst,'reload schema';

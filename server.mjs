@@ -1,5 +1,6 @@
 
 import express from 'express';
+import {findPurchasedEmail} from './lib/purchase-search.mjs';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
 import {randomBytes,scryptSync,timingSafeEqual,createHmac,createCipheriv,createDecipheriv,createHash} from 'node:crypto';
@@ -56,6 +57,11 @@ app.get('/api/state',async(req,res)=>{const u=req.user,admin=u.role==='admin',wo
  const stocks=await db('rpc/arka_stock',{method:'POST',body:{}});const orderIds=orders.map(o=>o.id);const items=orderIds.length?await all('arka_items','order_id=in.('+orderIds.join(',')+')'):[];
  res.json({server_now:new Date().toISOString(),user:safeUser(u),settings:settings[0],products,banks:worker?[]:banks,users,assignments,accounts:accounts.map(({cipher,...account})=>({...account,...(admin||worker?{email:cipher?unseal(cipher)?.email||'':''}:{})})),orders,items,reports,withdrawals,ledger,stocks,services:await services.state(u)});});
 
+app.post('/api/purchases/search',async(req,res)=>{
+ if(req.user.role!=='wholesale')throw fail('Esta búsqueda es privada para las compras del mayorista.',403);
+ const matches=await findPurchasedEmail({userId:req.user.id,email:req.body.email,fingerprint:email=>createHmac('sha256',encKey).update(email).digest('hex'),all});
+ res.json({matches});
+});
 app.get('/api/orders/:id/accounts',async(req,res)=>{
  if(!['admin','wholesale'].includes(req.user.role))throw fail('Acceso denegado',403);
  const[order]=await db('arka_orders?id=eq.'+encodeURIComponent(req.params.id)+'&select=id,buyer_id,status&limit=1');

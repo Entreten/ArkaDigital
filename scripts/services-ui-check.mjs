@@ -16,6 +16,7 @@ const server=createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;
   if(path==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream'});res.end('event: ready\ndata: {}\n\n');return;}
   if(path==='/api/notifications'){res.setHeader('Content-Type','application/json');res.end('{"notifications":[]}');return;}
+   if(path==='/api/purchases/search'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({matches:[{account_id:'account42',order_id:'order1',item_id:'item1',product_name:'Prime de prueba',purchased_at:now,delivered_at:now,status:'sold'}]}));return;}
   if(path==='/api/services/unit/unit-demo'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({unit:{id:'unit-demo',position:1,worker_id:user.id,status:'assigned',due_at:new Date(Date.now()+7200000).toISOString()},order:{id:'change1',number:1,mode:'password',unit_cents:25,margin_cents:5},request:{requested_password:'customer-chosen-test'},original:{email:'current@example.invalid',password:'current-test-only'},suggestion:{email:'current@example.invalid',password:'customer-chosen-test'}}));return;}
   if(path.startsWith('/api/orders/')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({accounts:Array.from({length:100},(_,i)=>({id:'account'+i,email:'account'+i+'@example.invalid',status:'sold',data:{email:'account'+i+'@example.invalid',password:'test-only-password-'+i,observation:'Observación '+i}}))}));return;}
   if(path.startsWith('/api/')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify(path==='/api/public'?{theme:'original'}:path==='/api/me'?{user:state().user}:state()));return;}
@@ -39,13 +40,17 @@ try{
     if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2))throw Error('Desbordamiento horizontal '+role+' '+view+' '+width);
    }
    if(role==='admin'){await page.evaluate(()=>document.querySelector('[data-nav="changes-offers"]').click());await page.locator('[data-action="changes-offer-new"]').click();await page.waitForSelector('[name="name"]');if(await page.locator('[name="workers"]').count())throw Error('La oferta aún preselecciona responsables');await page.locator('[data-action="close"]').first().click();}
-    await page.evaluate(()=>{S.services.notifications=[{id:'temporary',message:'Aviso temporal de prueba',created_at:new Date().toISOString()}];handlers['changes-notifications']();});
-    await page.getByText('Aviso temporal de prueba',{exact:true}).waitFor();
+    const inboxOpened=await page.evaluate(()=>{S.services.notifications=[{id:'temporary',message:'Aviso temporal de prueba',created_at:new Date().toISOString()}];handlers['changes-notifications']();return document.querySelector('.modal').textContent.includes('Aviso temporal de prueba');});
+    if(!inboxOpened)throw Error('No se abrió el buzón de avisos');
     await page.evaluate(()=>applyLiveState({...S,services:{...S.services,notifications:[]}}));
     await page.getByText('No tienes avisos pendientes',{exact:true}).waitFor();await page.locator('[data-action="close"]').first().click();
    await page.locator('.notification-sound-toggle').click();await page.waitForFunction(()=>document.querySelector('.notification-sound-toggle')?.textContent==='Sonido: activado');
    if(role==='wholesale'){
-    await page.evaluate(()=>document.querySelector('[data-nav="purchases"]').click());await page.locator('[data-action="purchase"]').click();await page.waitForSelector('#purchase-accounts tbody tr');
+     await page.evaluate(()=>document.querySelector('[data-nav="purchases"]').click());await page.locator('#purchases-global-email').fill('account42@example.invalid');await page.locator('[data-action="purchase-global-open"]').waitFor();
+     await page.locator('[data-action="purchase-global-open"]').click();await page.waitForFunction(()=>document.querySelectorAll('#purchase-accounts tbody tr').length===1);
+     if(await page.locator('#purchase-accounts').getByText('test-only-password-42',{exact:true}).count()!==1)throw Error('La búsqueda general no abrió la cuenta del pedido correcto');
+     await page.locator('[data-action="close"]').first().click();
+     await page.locator('[data-action="purchase"]').click();await page.waitForSelector('#purchase-accounts tbody tr');
     if(await page.locator('#purchase-accounts tbody tr').count()!==100)throw Error('No se mostraron las 100 cuentas juntas');
     if(await page.locator('#purchase-accounts').getByText('test-only-password-99',{exact:true}).count()!==1)throw Error('No se mostró la contraseña final');
     await page.locator('[data-action="purchase-copy-all"]').click();const copied=await page.evaluate(()=>navigator.clipboard.readText());if(copied.split('\n').length!==100)throw Error('No se copiaron las 100 cuentas');

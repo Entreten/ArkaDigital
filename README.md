@@ -42,6 +42,9 @@ Comandos: npm install; npm test; npm run check; npm start.
 - Las compras entregadas muestran todas las credenciales del producto juntas, con copia por campo, cuenta y lote filtrado.
 - Los avisos privados cubren pedidos, pagos, asignaciones, producción, garantías y derivaciones. El sonido requiere activación del usuario; se conserva el canal en pestañas en segundo plano.
 - Los avisos de tareas se retiran del buzón al terminar la fase pendiente de cada responsable, sin borrar la trazabilidad. Las confirmaciones informativas de entrega y saldo se retiran al leerlas. El buzón abierto se actualiza con los eventos existentes.
+- El administrador puede editar trabajos y quitar asignaciones erróneas. No se eliminan asignaciones de producción que ya tengan cuentas o pagos; en servicios solo se liberan unidades pendientes de envío, sin borrar compras ni devolver dinero.
+- «Mis cuentas compradas» permite buscar un correo completo entre todos los pedidos propios, muestra producto, pedido y fecha, y abre la compra filtrada. La consulta usa una huella indexada y no descarga contraseñas de otras carpetas.
+- `readability.css` aumenta ligeramente la letra; no cambia temas, audio, reglas de negocio ni escala el diseño completo.
 - El administrador puede retirar una venta de prueba con confirmación y copia privada de recuperación. No se revierten silenciosamente pagos laborales ni se devuelven cuentas usadas al stock.
 
 La instalación no trae cuentas streaming ni ventas ficticias. El administrador debe registrar productos, bancos, usuarios y stock.

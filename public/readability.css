@@ -9,4 +9,5 @@ body{font-size:17px}
 table{font-size:12px}.account-data,.purchase-value,.change-instructions{font-size:14px}
 .purchase-group h4,.work-deadline{font-size:14px}
 .notification-sound-toggle,.notifications-trigger{font-size:12px}
+.purchase-global-search .toolbar{display:flex;flex-wrap:wrap;align-items:end;gap:10px}.purchase-global-search .field{flex:1 1 240px;margin:0;min-width:0}.purchase-global-search input{width:100%;min-width:0}.purchase-global-search button{flex:0 0 auto}.purchase-global-search svg{vertical-align:middle;margin-right:4px}
 @media(max-width:760px){.product-body h3{font-size:13px}.hero p{font-size:12px}.top-actions button{font-size:11px}.change-instructions{font-size:13px}}
