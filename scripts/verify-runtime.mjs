@@ -26,7 +26,7 @@ try{
   if(user.role!=='admin'&&state.services.orders.length)throw Error('Una cuenta nueva recibió pedidos ajenos');
  }
  const guest=await fetch(url+'/api/services/state');if(guest.status!==401)throw Error('La API de servicios no está protegida');
- for(const file of ['/services.js?v=20261122-2','/services.css?v=20261122-2','/purchases.js?v=20261122-2','/notifications.js?v=20261122-2'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
+ for(const file of ['/services.js?v=20261122-3','/services.css?v=20261122-2','/purchases.js?v=20261122-2','/notifications.js?v=20261122-2'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
  console.log('RENDER_RUNTIME_OK: revisión publicada; salud de base de datos, sesiones de tres roles, finanzas y recursos nuevos verificados.');
 }finally{
  await sql('delete from arka_users where id in('+users.map(u=>quote(u.id)).join(',')+') and email like '+quote('qa_release_%_'+tag+'@example.invalid'));

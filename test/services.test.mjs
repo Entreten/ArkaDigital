@@ -4,7 +4,7 @@ import {suggestEmail,validateChange,commission,parseAccounts} from '../lib/chang
 import {workbook} from '../lib/xlsx.mjs';
 test('random suggestions keep the domain and have no collisions in 2000 rows',()=>{
  const emails=new Set(Array.from({length:2000},()=>suggestEmail('juan@example.com')));
- assert.equal(emails.size,2000);for(const email of emails)assert.match(email,/^juan[a-f0-9]{14}@example\.com$/);
+ assert.equal(emails.size,2000);for(const email of emails)assert.match(email,/^juan\d{12}@example\.com$/);
 });
 test('3 percent is rounded cumulatively, never once per 20-cent row',()=>{
  assert.equal(commission(2000),60);assert.equal(commission(20),1);
@@ -17,7 +17,14 @@ test('changes respect the original field and the requested common password',()=>
  assert.throws(()=>validateChange('email',original,{email:'juanabcdef123@example.com',password:'changed'},request));
  assert.throws(()=>validateChange('both',original,{email:'juan01234567@example.com',password:'common'},request));
  assert.throws(()=>validateChange('both',original,{email:'juanabcdef123@example.com',password:'wrong'},request));
- assert.doesNotThrow(()=>validateChange('both',original,{email:'juanabcdef123@example.com',password:'common'},request));
+ assert.doesNotThrow(()=>validateChange('both',original,{email:'juan482759301648@example.com',password:'common'},request));
+});
+test('requested base, domain and customer password are never replaced by defaults',()=>{
+ const original={email:'old@example.com',password:'old'},request={pattern:'felipe@example.com',requested_password:'customer-chosen-for-this-test'};
+ for(let i=0;i<100;i++)assert.match(suggestEmail(request.pattern),/^felipe\d{12}@example\.com$/);
+ assert.doesNotThrow(()=>validateChange('both',original,{email:'felipe482759301648@example.com',password:request.requested_password},request));
+ for(const email of ['juan482759301648@example.com','felipe482759301648@other.example','felipeabcdef123@example.com','felipe123456789012@example.com','felipe111111111111@example.com','felipe121212121212@example.com'])assert.throws(()=>validateChange('both',original,{email,password:request.requested_password},request));
+ assert.throws(()=>validateChange('both',original,{email:'felipe482759301648@example.com',password:'unrequested'},request));
 });
 test('bulk input rejects duplicates and malformed rows without echoing credentials',()=>{
  assert.equal(parseAccounts('a@example.com|a|b\nb@example.com\tsecond').length,2);

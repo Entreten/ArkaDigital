@@ -10,11 +10,11 @@
  const nameOf=id=>S.users.find(u=>u.id===id)?.name||(id===S.user.id?S.user.name:'Asignado');
  const active=o=>!['delivered','cancelled','expired'].includes(o.status);
  const click=(label,action,id='',cls='secondary small')=>btn(label,'changes-'+action,id,cls);
- const instructions=d=>'<section class="change-instructions"><strong>Indicaciones obligatorias · '+esc(modes[d.order.mode])+'</strong>'+
-  (d.order.mode!=='password'?'<p>Ejemplo solicitado: <code>'+esc(d.request.pattern)+'</code></p><p>Conserva esa base y dominio. Añade un sufijo aleatorio único por cuenta. Ejemplos de formato: <code>juan048474@oficialjack.online</code>, <code>juanu94772@oficialjack.online</code>. <strong>Nunca uses secuencias como 01, 02, 03.</strong> Usa únicamente un dominio o buzones que el cliente pueda utilizar.</p>':'<p>Conserva el correo original; este pedido solo modifica la contraseña.</p>')+
-  (d.order.mode==='email'?'<p>Conserva la contraseña original; solo debes cambiar el correo.</p>':d.request.fixed_password?'<p><strong>Contraseña común solicitada:</strong> <code class="sensitive">'+esc(d.request.fixed_password)+'</code>. Debe coincidir exactamente en todas las cuentas de este pedido.</p>':'<p>Usa la contraseña segura sugerida para cada cuenta y aplícala realmente en la plataforma.</p>')+
+ const instructions=d=>{const[base='',domain='']=String(d.request.pattern||'').split('@'),requested=d.request.requested_password??d.request.fixed_password;return '<section class="change-instructions"><strong>Indicaciones obligatorias · '+esc(modes[d.order.mode])+'</strong>'+
+  (d.order.mode!=='password'?'<p><strong>Nombre/base solicitada:</strong> <code>'+esc(base)+'</code><br><strong>Dominio solicitado:</strong> <code>'+esc(domain)+'</code></p><p>Conserva exactamente la base <code>'+esc(base)+'</code>. Añade números aleatorios distintos por cuenta y después <code>@'+esc(domain)+'</code>. Ejemplos del formato solicitado: <code>'+esc(base+'482759@'+domain)+'</code>, <code>'+esc(base+'917638@'+domain)+'</code>. <strong>No uses 01, 02, 03 ni otras secuencias o números repetitivos.</strong> No sustituyas la base por otro nombre ni cambies el dominio.</p>':'<p>Conserva el correo original; este pedido solo modifica la contraseña.</p>')+
+  (d.order.mode==='email'?'<p>Conserva la contraseña actual; el cliente solo pidió cambiar el correo.</p>':requested?'<p><strong>Contraseña nueva solicitada por el cliente para este pedido:</strong> <code class="sensitive">'+esc(requested)+'</code>. Aplícala exactamente. No es una contraseña predeterminada del sistema ni debe usarse para otros pedidos.</p>':'<p><strong>Falta la contraseña nueva solicitada. Consulta al cliente; no inventes una contraseña.</strong></p>')+
   (d.order.instructions?'<p>'+esc(d.order.instructions)+'</p>':'')+
-  '<p><strong>El cambio se realiza manualmente en la plataforma externa.</strong> La sugerencia no hace el cambio. Registra solo los datos que ya aplicaste.</p></section>';
+  '<p><strong>El cambio se realiza manualmente en la plataforma externa.</strong> La sugerencia no hace el cambio. Registra solo los datos que ya aplicaste.</p></section>';};
  const extraNav={
   wholesale:[['label','SERVICIOS Y SALDO'],['changes-shop','⇄','Solicitar cambios'],['changes-orders','▤','Mis cambios de correo/clave'],['credit-wallet','＄','Mi saldo a favor']],
   worker:[['label','CAMBIOS DE CORREO Y CLAVE'],['changes-work','⇄','Mis cambios asignados']],
@@ -159,16 +159,21 @@
  handlers['changes-buy']=id=>{
   const offer=X().offers.find(o=>o.id===id);
   modal('Solicitar '+esc(offer.name),'<div class="notice">'+money(offer.price_cents)+' por cuenta. El saldo a favor se aplicará automáticamente. No incluye reactivación de suscripciones ni creación de buzones.</div>'+
-   field('text','Ingresa las cuentas a modificar: una por línea, correo|contraseña','','textarea')+
-   (offer.mode!=='password'?field('pattern','Correo de ejemplo y dominio que puedes utilizar (ej. juan@tudominio.com)','','email'):'')+
-   (offer.mode!=='email'?field('fixed_password','Contraseña común solicitada (vacía = generar una diferente por cuenta)','','text',null,false):'')+
+   '<div id="change-single">'+field('current_email','Correo actual de la cuenta','','email')+field('current_password','Contraseña actual de la cuenta','','password')+'</div>'+
+   field('bulk_mode','Quiero enviar varias cuentas a la vez',false,'checkbox')+
+   '<div id="change-bulk" hidden>'+field('text','Cuentas actuales: una por línea, correo_actual|contraseña_actual','','textarea',null,false)+'</div>'+
+   (offer.mode!=='password'?field('email_base','Nombre/base que quieres para el correo nuevo (ejemplo: felipe, sin @)')+field('email_domain','Dominio que se usará, sin @ (debes poder utilizarlo)')+'<p class="notice">El equipo conservará tu nombre/base y añadirá números aleatorios diferentes antes de @dominio. No se usarán números consecutivos.</p>':'')+
+   (offer.mode!=='email'?field('requested_password','Contraseña nueva que deseas para este pedido','','password')+'<p class="subtle">Tú eliges la contraseña nueva. No hay ninguna contraseña predeterminada. Si envías un lote, se aplicará la que indiques a las cuentas de ese pedido.</p>':'')+
    field('acknowledged','Confirmo que son cuentas propias o autorizadas, accesibles y con suscripción vigente cuando sea necesaria',false,'checkbox'),async d=>{
-    const accounts=d.text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map((l,i)=>{const sep=l.includes('|')?'|':'\t',at=l.indexOf(sep);if(at<0)throw Error('Línea '+(i+1)+': usa correo|contraseña.');return{email:l.slice(0,at).trim(),password:l.slice(at+1).trim()};});
+    const accounts=d.bulk_mode?d.text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map((l,i)=>{const sep=l.includes('|')?'|':'\t',at=l.indexOf(sep);if(at<0)throw Error('Línea '+(i+1)+': usa correo_actual|contraseña_actual.');return{email:l.slice(0,at).trim(),password:l.slice(at+1).trim()};}):[{email:d.current_email,password:d.current_password}];
     if(!accounts.length)throw Error('Ingresa las cuentas que deseas modificar.');
     const total=accounts.length*offer.price_cents,credit=Math.min(total,Number(X().credit_cents));
     if(!confirm(accounts.length+' cuentas · Total '+money(total)+' · Saldo aplicado '+money(credit)+' · Diferencia a transferir '+money(total-credit)+'. ¿Confirmas el pedido?'))return;
-    await api('/api/services/command',{action:'create',payload:{offer_id:id,accounts,pattern:d.pattern||'',fixed_password:d.fixed_password||'',acknowledged:d.acknowledged}});view='changes-orders';await load();
+    await api('/api/services/command',{action:'create',payload:{offer_id:id,accounts,email_base:d.email_base||'',email_domain:d.email_domain||'',requested_password:d.requested_password||'',acknowledged:d.acknowledged}});view='changes-orders';await load();
    },true);
+  const form=$('#modal-form'),bulk=form.elements.bulk_mode,text=form.elements.text;text.disabled=true;
+  bulk.addEventListener('change',()=>{const enabled=bulk.checked;$('#change-single').hidden=enabled;$('#change-bulk').hidden=!enabled;for(const name of ['current_email','current_password'])form.elements[name].disabled=enabled;text.disabled=!enabled;text.required=enabled;});
+  for(const name of ['current_email','current_password','email_base','email_domain','requested_password'])if(form.elements[name])form.elements[name].autocomplete=name==='requested_password'?'new-password':'off';
  };
  handlers['changes-payment']=id=>{const o=orderBy(id);modal('Declarar transferencia CAM-'+o.number,field('bank_id','Banco','','select',S.banks.map(b=>[b.id,b.bank+' · '+b.account_number]))+field('sender','Remitente')+field('transaction_code','Código de transacción')+field('payment_date','Fecha',new Date().toISOString().slice(0,10),'date')+field('amount','Importe exacto (USD)',(o.total_cents-o.credit_cents)/100,'number'),d=>change('payment',{...d,id,paid_cents:moneyInput(d.amount)}));};
  handlers['changes-verify']=async id=>{if(confirm('¿Verificaste el ingreso real y completo en tu banco?'))await change('verify_payment',{id},id);};

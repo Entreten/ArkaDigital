@@ -23,6 +23,10 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   if(!original&&unit.linked_account_id){const a=await one('arka_accounts',unit.linked_account_id);if(a.buyer_id!==o.buyer_id)throw fail('Cuenta vinculada no disponible.',403);original=unseal(a.cipher);}
   original=original||{};
   const response={unit,order:{id:o.id,number:o.number,mode:o.mode,offer_name:o.offer_name,unit_cents:o.unit_cents,margin_cents:o.margin_cents,instructions:o.instructions},request,original,suggestion:unseal(secret?.suggestion_cipher)};
+  if(o.status==='processing'&&original&&response.suggestion){
+   try{validateChange(o.mode,original,response.suggestion,request);}
+   catch{response.suggestion={email:o.mode==='password'?original.email:suggestEmail(request.pattern),password:o.mode==='email'?original.password:(request.requested_password??request.fixed_password??'')};}
+  }
   if(user.role!=='wholesale')response.result=unseal(secret?.result_cipher);
   return response;
  }
@@ -31,12 +35,13 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   if(a.buyer_id!==user.id||a.status!=='sold'||p.mode!=='duration'||new Date(a.expires_at)<=new Date())throw fail('Selecciona una cuenta tuya con garantía por duración vigente.');
   return {data:unseal(a.cipher),id:a.id};
  }
- async function prepareAccount(user,input,request,mode,useLinkedData=true){
+ async function prepareAccount(user,input,request,mode,useLinkedData=true,usedEmails=new Set()){
   let original=input,link=null;
   if(input.linked_account_id){const a=await linked(user,input.linked_account_id);if(useLinkedData)original=a.data;link=a.id;}
   const normalized={email:String(original.email||'').trim().toLowerCase(),password:String(original.password||'')};
   const encrypted=accountInput(normalized);
-  const suggestion={email:mode==='password'?normalized.email:suggestEmail(request.pattern),password:mode==='email'?normalized.password:request.fixed_password||randomBytes(18).toString('base64url')};
+  let email=normalized.email;if(mode!=='password'){do{email=suggestEmail(request.pattern);}while(usedEmails.has(email));}usedEmails.add(email);
+  const suggestion={email,password:mode==='email'?normalized.password:(request.requested_password??request.fixed_password??'')};
   return {...encrypted,cipher:link&&useLinkedData?null:encrypted.cipher,linked_account_id:link,suggestion_cipher:seal(suggestion)};
  }
  app.get('/api/services/state',async(req,res)=>res.json(await state(req.user)));
@@ -70,12 +75,15 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   if(!['create','notification_read','payment','verify_payment','cancel','assign','deliver','accept','submit','approve','reject','problem','correct','refund_request','refund_approve','refund_reject'].includes(action))throw fail('Operación desconocida');
   if(action==='create'){
    allowed(req.user,['wholesale']);const offer=await one('arka_change_offers',payload.offer_id);
-   const request={pattern:clean(payload.pattern,320).toLowerCase(),fixed_password:String(payload.fixed_password||'').slice(0,500)};
+   const base=String(payload.email_base||'').trim().toLowerCase(),domain=String(payload.email_domain||'').trim().toLowerCase().replace(/^@/,'');
+   if((payload.email_base||payload.email_domain)&&(!/^[a-z0-9][a-z0-9._+-]{0,44}$/i.test(base)||domain.length>253||!domain.includes('.')||!/^[a-z0-9.-]+$/.test(domain)))throw fail('Separa el nombre/base del correo (hasta 45 caracteres) y un dominio válido sin @.');
+   const request={pattern:base||domain?base+'@'+domain:clean(payload.pattern,320).toLowerCase(),requested_password:String(payload.requested_password??payload.fixed_password??'')};
    if(offer.mode!=='password'&&!emailValid(request.pattern))throw fail('Indica el ejemplo de correo de un dominio que puedas utilizar.');
+   if(offer.mode!=='email'&&(!request.requested_password||request.requested_password.length>500))throw fail('Indica la contraseña nueva que deseas, de hasta 500 caracteres. No se asigna ninguna contraseña predeterminada.');
    const inputs=Array.isArray(payload.accounts)?payload.accounts:parseAccounts(payload.text);
    if(inputs.some(input=>input.linked_account_id))throw fail('Este servicio solo acepta cuentas ingresadas manualmente; no se vincula a compras anteriores.');
    if(!inputs.length||inputs.length>1000)throw fail('Carga entre 1 y 1000 cuentas.');
-   const accounts=[],seen=new Set();for(const input of inputs){const a=await prepareAccount(req.user,input,request,offer.mode);if(seen.has(a.fingerprint))throw fail('Hay cuentas de origen duplicadas.');seen.add(a.fingerprint);accounts.push(a);}
+   const accounts=[],seen=new Set(),usedEmails=new Set();for(const input of inputs){const a=await prepareAccount(req.user,input,request,offer.mode,true,usedEmails);if(seen.has(a.fingerprint))throw fail('Hay cuentas de origen duplicadas.');seen.add(a.fingerprint);accounts.push(a);}
    payload={offer_id:offer.id,accounts,request_cipher:seal(request),acknowledged:payload.acknowledged===true};
   }else if(action==='submit'){
    allowed(req.user,['admin','worker']);const d=await details(req.user,payload.id);
