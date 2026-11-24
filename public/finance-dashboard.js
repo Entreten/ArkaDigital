@@ -21,10 +21,12 @@
    return {id:u.id,name:u.name,balance,reserved,free:balance-reserved,production,services,fees,paid,adjustments:other,
     expected:production+services+other-paid,difference:balance-(production+services+other-paid),movements};
   });
-  return {commercial,own,commissions,earned,adjustments,withdrawn,unclassified,available,
-   reportedDifference:cents(f.available)-available,reserve:byKind('reserve')+byKind('reserve_use'),reserveCorrections,
-   workers,workersDue:sum(workers,'balance'),requested:sum(workers,'reserved'),workersPaid:sum(workers,'paid'),
-   buyerCredit:sum(f.users||[],'credit_cents')};
+  const workersDue=sum(workers,'balance'),workersPaid=sum(workers,'paid'),buyerCredit=sum(f.users||[],'credit_cents');
+  const reserve=byKind('reserve')+byKind('reserve_use');
+  const cashGap=f.verified_receipts===undefined?0:Math.max(0,available+workersDue+buyerCredit+cents(f.funds_processing)+reserve-(cents(f.verified_receipts)-workersPaid-withdrawn));
+  return {commercial,own,commissions,earned,adjustments,withdrawn,unclassified,available,cashGap,
+   reportedDifference:cents(f.available)-available,reserve,reserveCorrections,
+   workers,workersDue,requested:sum(workers,'reserved'),workersPaid,buyerCredit};
  }
  root.arkaFinancialSummary=summarize;
  if(typeof document==='undefined')return;
@@ -80,7 +82,8 @@
    card('Transferencias que confirmaste',cents(f.verified_receipts),'Total de cobros confirmados en la web. Incluye importes para trabajo, servicios y ventas; no significa ganancia ni verifica tu banco.')+
    card('Valor de servicios en proceso',cents(f.funds_processing),'Pedidos de contraseñas confirmados, pero todavía sin completar. Sus ganancias se reparten al entregar; no se suman como trabajo terminado.')+
    card('Saldo a favor de mayoristas',s.buyerCredit,'Dinero que los clientes pueden usar en compras o servicios. No es ganancia tuya.')+
-   card('Dinero apartado para garantías',s.reserve,'Reserva separada para devoluciones de productos por meses. No está sumada en tu saldo personal disponible.')+'</div></section>'+
+   card('Dinero apartado para garantías',s.reserve,'Reserva separada para devoluciones de productos por meses. No está sumada en tu saldo personal disponible.')+'</div>'+
+   (s.cashGap?'<div class="notice"><strong>Antes de retirar, revisa el dinero real.</strong> Los cobros anotados no cubren a la vez todos los saldos mostrados. Puede haber producción aprobada todavía sin vender, aportes externos o movimientos antiguos sin registrar. Esto no demuestra que falte dinero en tu banco: la web no lo consulta y no ha cambiado ningún saldo.</div>':'')+'</section>'+
    '<section class="finance-section"><h2>Historial de tu saldo</h2><p>Cada entrada explica por qué subió o bajó. La reserva tiene su propio historial en el apartado inferior.</p><div class="form-row">'+
    field('finance_clear_from','Desde',from,'date',null,false)+field('finance_clear_to','Hasta',to,'date',null,false)+'</div>'+
    '<p class="finance-help">Las fechas solo filtran esta tabla. Los saldos y totales de arriba siguen siendo acumulados. Movimientos mostrados: '+rows.length+'.</p>'+
