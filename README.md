@@ -32,6 +32,7 @@ Comandos: npm install; npm test; npm run check; npm start.
 - El administrador puede producir o realizar cambios personalmente. Su margen comercial, ejecución propia, comisiones, reserva y retiros tienen movimientos separados.
 - La reserva empieza sin porcentaje configurado. Se requiere una elección explícita; no se inventan costes históricos ausentes.
 - Datos de cambios: acceso del comprador durante siete días exactos desde la entrega completa, exportación XLSX y limpieza posterior. El equipo deja de acceder al entregar.
+- Al abrir un pedido de cambios entregado, su mayorista ve juntos los correos y contraseñas finales, con copia individual o en lote. La consulta y la exportación leen por lotes, sin revelar contraseñas originales ni datos de unidades canceladas.
 - Los servicios nuevos de cambios solo aceptan cuentas ingresadas manualmente. No hay selector ni vinculación automática con compras anteriores.
 - `database/services.sql` es aditivo y transaccional. El flujo de despliegue permite `validate`, `migrate` y `deploy`; las pruebas usan PostgreSQL aislado y navegador con datos ficticios.
 - No se modifica el mecanismo externo que mantiene activo Render, ni los recursos de audio o temas existentes.

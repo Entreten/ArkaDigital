@@ -7,6 +7,7 @@ const user={id:'11111111-1111-4111-8111-111111111111',name:'Prueba UI',email:'ui
 function state(){
  const u={...user,role:profile},services={offers:[{id:'offer1',name:'Cambio de contraseña de prueba',mode:'password',price_cents:25,margin_cents:5,instructions:'Conserva el correo actual.',active:true,workers:[]}],orders:[],units:[],notifications:[],wallet:[],credit_cents:0,history:[]};
  services.orders=[{id:'change1',number:1,offer_id:'offer1',offer_name:'Cambio de contraseña de prueba',mode:'password',buyer_id:u.id,status:'processing',unit_cents:25,margin_cents:5,quantity:1,total_cents:25,credit_cents:0,created_at:now}];
+ if(profile==='wholesale')services.orders.push({...services.orders[0],id:'delivered200',number:200,status:'delivered',quantity:200,total_cents:5000,delivered_at:now,access_until:new Date(Date.now()+60000).toISOString()});
  services.units=[{id:'unit-demo',order_id:'change1',position:1,worker_id:u.id,status:'assigned',email:'current@example.invalid',due_at:new Date(Date.now()+7200000).toISOString(),needs_password:false}];
  services.finance={settings:{reserve_bps:null,pending_hours:24,unpaid_retention_days:30},entries:[],costs:[],sales:[],users:[],wallet:[],storage:{used_bytes:1000,limit_bytes:524288000,measured_at:now},available:0,reserve:0,commercial:0,own:0,commissions:0,withdrawn:0,workers_due:0,buyer_credits:0,pending_historical:0,unknown_costs:0,pending_reserve:0,funds_processing:0};
   return {server_now:new Date().toISOString(),user:u,settings:{theme:'original',announcement:'',announcement_enabled:false,announcement_interval:75},products:[{id:'product1',name:'Prime de prueba',mode:'duration',duration_months:6,price_cents:100,active:true}],banks:[],users:[u,...(profile==='admin'?[{id:'22222222-2222-4222-8222-222222222222',name:'Trabajador de prueba',email:'balance-ui@example.invalid',phone:'+593999999999',role:'worker',active:true,balance_cents:900,reserved_cents:300}]:[])],assignments:profile==='wholesale'?[]:[{id:'assignment1',worker_id:u.id,product_id:'product1',quantity:100,rate_cents:50,active:true,due_at:new Date(Date.now()+7200000).toISOString(),work_submitted_at:null}],accounts:[],orders:[{id:'order1',buyer_id:u.id,status:'delivered',total_cents:10000,credit_cents:0,created_at:now,delivered_at:now}],items:[{id:'item1',order_id:'order1',product_id:'product1',product_name:'Prime de prueba',quantity:100}],reports:[],withdrawals:[],ledger:[],stocks:[],services};
@@ -16,6 +17,10 @@ const server=createServer(async(req,res)=>{
   const path=new URL(req.url,'http://localhost').pathname;
   if(path==='/api/events'){res.writeHead(200,{'Content-Type':'text/event-stream'});res.end('event: ready\ndata: {}\n\n');return;}
   if(path==='/api/notifications'){res.setHeader('Content-Type','application/json');res.end('{"notifications":[]}');return;}
+  if(path==='/api/services/orders/delivered200/results'){
+   res.setHeader('Content-Type','application/json');
+   return res.end(JSON.stringify({number:200,server_now:new Date().toISOString(),access_until:new Date(Date.now()+60000).toISOString(),accounts:Array.from({length:200},(_,i)=>({position:i+1,status:'approved',email:`result-${i+1}@example.invalid`,password:`test-final-${i+1}`}))}));
+  }
    if(path==='/api/purchases/search'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({matches:[{account_id:'account42',order_id:'order1',item_id:'item1',product_name:'Prime de prueba',purchased_at:now,delivered_at:now,status:'sold'}]}));return;}
   if(path==='/api/services/unit/unit-demo'){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({unit:{id:'unit-demo',position:1,worker_id:user.id,status:'assigned',due_at:new Date(Date.now()+7200000).toISOString()},order:{id:'change1',number:1,mode:'password',unit_cents:25,margin_cents:5},request:{requested_password:'customer-chosen-test'},original:{email:'current@example.invalid',password:'current-test-only'},suggestion:{email:'current@example.invalid',password:'customer-chosen-test'}}));return;}
   if(path.startsWith('/api/orders/')){res.setHeader('Content-Type','application/json');res.end(JSON.stringify({accounts:Array.from({length:100},(_,i)=>({id:'account'+i,email:'account'+i+'@example.invalid',status:'sold',data:{email:'account'+i+'@example.invalid',password:'test-only-password-'+i,observation:'Observación '+i}}))}));return;}
@@ -55,6 +60,17 @@ try{
     await page.getByText('No tienes avisos pendientes',{exact:true}).waitFor();await page.locator('[data-action="close"]').first().click();
    await page.locator('.notification-sound-toggle').click();await page.waitForFunction(()=>document.querySelector('.notification-sound-toggle')?.textContent==='Sonido: activado');
    if(role==='wholesale'){
+     await page.evaluate(()=>document.querySelector('[data-nav="changes-orders"]').click());
+     await page.locator('[data-action="changes-order"][data-id="delivered200"]').click();
+     const batch=page.locator('#change-delivered-results');
+     await batch.getByText('test-final-200',{exact:true}).waitFor();
+     if(await batch.locator('tbody tr').count()!==200||await batch.locator('[data-action="changes-unit"]').count())throw Error('No se mostraron todos los resultados juntos');
+     if(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth+2))throw Error('Resultados de contraseña desbordan la pantalla');
+     await batch.locator('[data-copy-result="200"]').click();
+     if(await page.evaluate(()=>navigator.clipboard.readText())!=='result-200@example.invalid\ttest-final-200')throw Error('No se copió la cuenta entregada');
+     await batch.locator('[data-copy-result="all"]').click();
+     if((await page.evaluate(()=>navigator.clipboard.readText())).split('\n').length!==200)throw Error('No se copiaron las 200 cuentas entregadas');
+     await page.locator('[data-action="close"]').first().click();
      await page.evaluate(()=>document.querySelector('[data-nav="purchases"]').click());await page.locator('#purchases-global-email').fill('account42@example.invalid');await page.locator('[data-action="purchase-global-open"]').waitFor();
      await page.locator('[data-action="purchase-global-open"]').click();await page.waitForFunction(()=>document.querySelectorAll('#purchase-accounts tbody tr').length===1);
      if(await page.locator('#purchase-accounts').getByText('test-only-password-42',{exact:true}).count()!==1)throw Error('La búsqueda general no abrió la cuenta del pedido correcto');

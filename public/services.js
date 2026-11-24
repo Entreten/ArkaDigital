@@ -93,8 +93,46 @@
  async function change(action,payload,reopen){
   await api('/api/services/command',{action,payload});await load();closeModal();toast('Operación guardada correctamente');if(reopen)setTimeout(()=>{if(S&&orderBy(reopen))void showOrderChanges(reopen);},0);
  }
+ async function showDeliveredAccounts(o){
+  const owner=S.user.id,started=performance.now();
+  modal('CAM-'+o.number,'<div class="notice"><strong>'+esc(o.offer_name)+'</strong><br>Entregado: '+date(o.delivered_at)+'. Datos disponibles hasta '+date(o.access_until)+'.</div><section id="change-delivered-results" aria-label="Cuentas entregadas"><p role="status">Cargando cuentas entregadas…</p></section>',null,true);
+  const box=$('#change-delivered-results');
+  try{
+   const result=await api('/api/services/orders/'+encodeURIComponent(o.id)+'/results');
+   if(!box.isConnected||S?.user.id!==owner)return;
+   const remaining=Date.parse(result.access_until)-Date.parse(result.server_now);
+   const expired=()=>!Number.isFinite(remaining)||performance.now()-started>=remaining||S?.user.id!==owner||role()!=='wholesale';
+   const expire=()=>{box.onclick=null;box.innerHTML='<p role="status">Ya terminó el plazo de siete días para ver y copiar estos datos.</p>';};
+   if(expired()){expire();return;}
+   const canCopy=a=>!!a.email&&a.password!==null;
+   const available=result.accounts.filter(canCopy);
+   const byPosition=new Map(available.map(a=>[String(a.position),a]));
+   const cell=value=>'<code class="purchase-value">'+esc(value)+'</code>';
+   const line=a=>[a.email,a.password].map(s=>String(s).replace(/[\r\n\t]+/g,' ')).join('\t');
+   box.innerHTML='<div class="change-instructions"><strong>'+available.length+' cuentas con datos disponibles</strong><p>Las contraseñas nuevas son privadas. Guarda tus datos antes del '+date(result.access_until)+'.</p><div class="row-actions">'+
+    (available.length?'<button type="button" class="primary" data-copy-result="all">Copiar todas las cuentas</button> <a class="button secondary" href="/api/services/orders/'+encodeURIComponent(o.id)+'/export">Exportar a Excel</a>':'')+'</div></div>'+
+    table(['Cuenta','Correo','Contraseña nueva','Acción'],result.accounts.map(a=>['#'+a.position,canCopy(a)?cell(a.email):'—',canCopy(a)?cell(a.password):'—',canCopy(a)?'<button type="button" class="secondary small" data-copy-result="'+a.position+'">Copiar cuenta</button>':a.status==='cancelled'?'Cancelada con devolución':'Datos no disponibles']));
+   box.onclick=async e=>{
+    if(expired()){e.preventDefault();expire();return;}
+    const key=e.target.closest('[data-copy-result]')?.dataset.copyResult;if(!key)return;
+    const rows=key==='all'?available:[byPosition.get(key)].filter(Boolean);
+    try{await navigator.clipboard.writeText(rows.map(line).join('\n'));toast(rows.length===1?'Cuenta copiada':rows.length+' cuentas copiadas');}
+    catch{toast('El navegador no permitió copiar. Puedes seleccionar los datos o exportarlos a Excel.');}
+   };
+   const timer=setTimeout(()=>{if(box.isConnected)expire();},Math.max(0,remaining-(performance.now()-started)));
+   // Cancel the timer and release credential data as soon as this detail closes.
+   const observer=new MutationObserver(()=>{if(!box.isConnected){clearTimeout(timer);observer.disconnect();}});
+   observer.observe($('#modal-root'),{childList:true});
+  }catch(e){
+   if(box.isConnected&&S?.user.id===owner){
+    box.innerHTML='<p class="error">'+esc(e.message)+'</p>';
+    if(Date.parse(o.access_until)>Date.now())box.insertAdjacentHTML('beforeend',click('Volver a intentar','order',o.id));
+   }
+  }
+ }
  async function showOrderChanges(id){
   const o=orderBy(id);if(!o)return;const admin=role()==='admin',workerView=view==='changes-work'||role()==='worker',rows=unitRows(o).filter(u=>!workerView||u.worker_id===S.user.id),paid=o.total_cents-o.credit_cents;
+  if(o.status==='delivered'&&role()==='wholesale'&&!o.purged_at)return showDeliveredAccounts(o);
   let h='<div class="notice"><strong>'+esc(o.offer_name)+' · '+esc(modes[o.mode])+'</strong><br>'+progress(o,workerView)+'</div>';
   if(workerView&&o.status==='processing')h+=instructions(await api('/api/services/orders/'+id+'/instructions'));
   if(!workerView)h+='<p>Total: <strong>'+money(o.total_cents)+'</strong> · Saldo aplicado: '+money(o.credit_cents)+' · Transferencia: '+money(paid)+'</p>';
@@ -109,8 +147,7 @@
   }
   if(o.status==='delivered'){
    h+='<div class="notice">Entregado: '+date(o.delivered_at)+'. Plazo de datos: '+date(o.access_until)+'.</div>';
-   if(role()==='wholesale'&&new Date(o.access_until)>new Date()&&!o.purged_at)h+='<div class="change-instructions"><strong>Descarga tus cuentas antes del '+date(o.access_until)+'.</strong><p>El archivo contiene contraseñas; guárdalo en un lugar seguro.</p><a class="button primary" href="/api/services/orders/'+encodeURIComponent(id)+'/export">Exportar a Excel</a></div>';
-   else h+='<p class="subtle">Solo se conserva el resumen administrativo y contable. Los responsables no conservan acceso a las credenciales.</p>';
+   h+='<p class="subtle">Los datos de las cuentas ya no están disponibles para este perfil. Solo se conserva el resumen del pedido.</p>';
   }
    h+=table(['Cuenta','Estado',...(admin?['Responsable']:[]),'Fecha máxima y tiempo restante','Acción'],rows.map(u=>{
    let actions='';
@@ -119,7 +156,7 @@
     if(role()==='wholesale'&&['blocked','refund_requested'].includes(u.status))actions+=click('Responder incidencia','unit',u.id);
      if(role()==='wholesale'&&u.needs_password&&['pending','assigned','rejected'].includes(u.status))actions+=click('Indicar contraseña nueva','set-password',u.id);
     if(admin&&['assigned','rejected'].includes(u.status))actions+=click('Reasignar','reassign',u.id);
-   }else if(o.status==='delivered'&&role()==='wholesale'&&u.status!=='cancelled'&&new Date(o.access_until)>new Date()&&!o.purged_at)actions=click('Ver resultado','unit',u.id);
+   }
     return ['#'+u.position+(u.email?'<br>'+esc(u.email):'')+(u.reason?'<br><span class="muted">'+esc(u.reason)+'</span>':''),u.status==='pending'?'<span class="badge">Sin asignar</span>':status(u.status),...(admin?[esc(u.worker_id?nameOf(u.worker_id):'Sin asignar')]:[]),window.workDeadlineHTML('change_unit',u),actions||'—'];
   }));
   if(admin){const history=(X().history||[]).filter(e=>e.order_id===id).sort((a,b)=>b.created_at.localeCompare(a.created_at));h+=panel('Historial administrativo',table(['Fecha','Acción','Responsable'],history.map(e=>[date(e.created_at),esc(e.action),esc(nameOf(e.actor_id))])));}

@@ -6,6 +6,36 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
  const one=async(table,id)=>{const[r]=await db(table+'?id=eq.'+encodeURIComponent(id)+'&limit=1');if(!r)throw fail('Registro no encontrado',404);return r;};
  const allowed=(u,roles)=>{if(!roles.includes(u.role))throw fail('Acceso denegado',403);};
  async function orderAccess(user,id){const o=await one('arka_change_orders',id);if(user.role==='wholesale'&&o.buyer_id!==user.id)throw fail('Acceso denegado',403);if(user.role==='worker'&&!(await db('arka_change_units?order_id=eq.'+o.id+'&worker_id=eq.'+user.id+'&select=id&limit=1')).length)throw fail('Acceso denegado',403);return o;}
+ async function deliveredAccounts(user,id){
+  allowed(user,['wholesale']);
+  const o=await orderAccess(user,id);
+  if(o.status!=='delivered')throw fail('Los resultados se habilitan cuando se entrega todo el pedido.',403);
+  const until=Date.parse(o.access_until);
+  const checkExpiry=()=>{if(!Number.isFinite(until)||until<=Date.now()||o.purged_at)throw fail('Ya terminó el plazo de siete días para ver estos datos.',410);};
+  checkExpiry();
+  const units=await all('arka_change_units','order_id=eq.'+o.id+'&order=position.asc','id,position,status,linked_account_id');
+  const approved=units.filter(u=>u.status==='approved');
+  const linkedIds=[...new Set(approved.map(u=>u.linked_account_id).filter(Boolean))];
+  const batch=async(table,key,ids,select,required='')=>{
+   const rows=[];
+   for(let i=0;i<ids.length;i+=100)rows.push(...await all(table,key+'=in.('+ids.slice(i,i+100).join(',')+')'+required,select));
+   return new Map(rows.map(row=>[row[key],row]));
+  };
+  const [secrets,legacy]=await Promise.all([
+   batch('arka_change_secrets','unit_id',approved.filter(u=>!u.linked_account_id).map(u=>u.id),'unit_id,result_cipher'),
+   batch('arka_accounts','id',linkedIds,'id,cipher','&buyer_id=eq.'+user.id+'&status=eq.sold&expires_at=gt.'+encodeURIComponent(new Date().toISOString()))
+  ]);
+  const accounts=units.map(u=>{
+   const data=u.status==='approved'?unseal(u.linked_account_id?legacy.get(u.linked_account_id)?.cipher:secrets.get(u.id)?.result_cipher):null;
+   return {position:u.position,status:u.status,email:data?.email??null,password:data?.password??null};
+  });
+  checkExpiry();
+  return {number:o.number,access_until:o.access_until,server_now:new Date().toISOString(),accounts};
+ }
+ app.get('/api/services/orders/:id/results',async(req,res)=>{
+  res.set('Cache-Control','no-store');
+  res.json(await deliveredAccounts(req.user,req.params.id));
+ });
  async function details(user,id){
   const unit=await one('arka_change_units',id),o=await orderAccess(user,unit.order_id);
   if(user.role==='worker'&&unit.worker_id!==user.id)throw fail('Acceso denegado',403);
@@ -55,14 +85,13 @@ export function installServices(app,{db,all,seal,unseal,accountInput,fail,clean,
   res.json(await db('rpc/arka_set_unit_requested_password',{method:'POST',body:{actor:req.user.id,target:req.params.id,desired_cipher:seal({requested_password:requested})}}));
  });
  app.get('/api/services/orders/:id/export',async(req,res)=>{
-  allowed(req.user,['wholesale']);const o=await orderAccess(req.user,req.params.id);
-  if(o.status!=='delivered'||!o.access_until||new Date(o.access_until)<=new Date()||o.purged_at)throw fail('El plazo para exportar terminó.',410);
-  const units=await all('arka_change_units','order_id=eq.'+o.id+'&order=position.asc');
+  res.set('Cache-Control','no-store');
+  const o=await deliveredAccounts(req.user,req.params.id);
   const rows=[['Pedido','Cuenta','Correo final','Contraseña final','Estado']];
-  for(const unit of units){const d=await details(req.user,unit.id);rows.push(['CAM-'+o.number,unit.position,d.result?.email||'',d.result?.password||'',unit.status==='cancelled'?'Cancelada con devolución':'Entregada']);}
-  // Recheck at response time: a long export must not bypass the exact access deadline.
+  for(const a of o.accounts)rows.push(['CAM-'+o.number,a.position,a.email??'',a.password??'',a.status==='cancelled'?'Cancelada con devolución':a.email?'Entregada':'Datos no disponibles']);
+  const file=workbook(rows);
   if(new Date(o.access_until)<=new Date())throw fail('El plazo para exportar terminó.',410);
-  res.set({'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':`attachment; filename="ARKA-CAM-${o.number}.xlsx"`,'Cache-Control':'no-store'}).send(workbook(rows));
+  res.set({'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':`attachment; filename="ARKA-CAM-${o.number}.xlsx"`}).send(file);
  });
  app.post('/api/services/offers',async(req,res)=>{
   allowed(req.user,['admin']);const b=req.body,price=number(b.price_cents,1),margin=number(b.margin_cents);

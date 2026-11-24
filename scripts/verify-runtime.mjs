@@ -41,7 +41,9 @@ try{
   if(user.role!=='admin'&&state.services.orders.length)throw Error('Una cuenta nueva recibió pedidos ajenos');
  }
  const guest=await fetch(url+'/api/services/state');if(guest.status!==401)throw Error('La API de servicios no está protegida');
- for(const file of ['/app.js?v=20261122-8','/services.js?v=20261122-6','/services.css?v=20261122-4','/readability.css?v=20261122-1','/deadlines.js?v=20261122-6','/purchases.js?v=20261122-7','/notifications.js?v=20261122-5'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
+ const guestResults=await fetch(url+'/api/services/orders/'+randomUUID()+'/results');if(guestResults.status!==401)throw Error('Resultados de servicios sin autenticación');
+ const page=await fetch(url).then(r=>r.text());if(!page.includes('/services.js?v=delivered-accounts-1'))throw Error('La web no carga la lista nueva de cuentas entregadas');
+ for(const file of ['/app.js?v=20261122-8','/services.js?v=delivered-accounts-1','/services.css?v=20261122-4','/readability.css?v=20261122-1','/deadlines.js?v=20261122-6','/purchases.js?v=20261122-7','/notifications.js?v=20261122-5'])if(!(await fetch(url+file)).ok)throw Error('No se publicó un recurso necesario');
  console.log('RENDER_RUNTIME_OK: revisión publicada; salud de base de datos, sesiones de tres roles, finanzas y recursos nuevos verificados.');
 }finally{
  await sql('delete from arka_users where id in('+users.map(u=>quote(u.id)).join(',')+') and email like '+quote('qa_release_%_'+tag+'@example.invalid'));
