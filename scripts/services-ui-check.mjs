@@ -1,6 +1,7 @@
 import {createServer} from 'node:http';
 import {readFile} from 'node:fs/promises';
 import {chromium} from 'playwright';
+import '../public/finance-dashboard.js';
 const root=new URL('../public/',import.meta.url),now=new Date().toISOString();
 let profile='admin';
 const user={id:'11111111-1111-4111-8111-111111111111',name:'Prueba UI',email:'ui@example.invalid',role:'admin',active:true,balance_cents:0,reserved_cents:0};
@@ -10,6 +11,9 @@ function state(){
  if(profile==='wholesale')services.orders.push({...services.orders[0],id:'delivered200',number:200,status:'delivered',quantity:200,total_cents:5000,delivered_at:now,access_until:new Date(Date.now()+60000).toISOString()});
  services.units=[{id:'unit-demo',order_id:'change1',position:1,worker_id:u.id,status:'assigned',email:'current@example.invalid',due_at:new Date(Date.now()+7200000).toISOString(),needs_password:false}];
  services.finance={settings:{reserve_bps:null,pending_hours:24,unpaid_retention_days:30},entries:[],costs:[],sales:[],users:[],wallet:[],storage:{used_bytes:1000,limit_bytes:524288000,measured_at:now},available:0,reserve:0,commercial:0,own:0,commissions:0,withdrawn:0,workers_due:0,buyer_credits:0,pending_historical:0,unknown_costs:0,pending_reserve:0,funds_processing:0};
+  if(profile==='admin')Object.assign(services.finance,{available:668,commercial:465,own:130,commissions:16,workers_due:427,pending_reserve:8,
+   entries:[{kind:'margin',amount_cents:465,description:'Tu parte de ventas',created_at:now},{kind:'own',amount_cents:130,created_at:now},{kind:'commission',amount_cents:16,user_id:'22222222-2222-4222-8222-222222222222',created_at:now},{kind:'adjustment',amount_cents:57,event_key:'worker-balance:test',description:'Corrección del saldo',created_at:now}],
+   users:[{id:'22222222-2222-4222-8222-222222222222',name:'Trabajador de prueba',role:'worker',balance_cents:427,reserved_cents:100,credit_cents:0}]});
   return {server_now:new Date().toISOString(),user:u,settings:{theme:'original',announcement:'',announcement_enabled:false,announcement_interval:75},products:[{id:'product1',name:'Prime de prueba',mode:'duration',duration_months:6,price_cents:100,active:true}],banks:[],users:[u,...(profile==='admin'?[{id:'22222222-2222-4222-8222-222222222222',name:'Trabajador de prueba',email:'balance-ui@example.invalid',phone:'+593999999999',role:'worker',active:true,balance_cents:900,reserved_cents:300}]:[])],assignments:profile==='wholesale'?[]:[{id:'assignment1',worker_id:u.id,product_id:'product1',quantity:100,rate_cents:50,active:true,due_at:new Date(Date.now()+7200000).toISOString(),work_submitted_at:null}],accounts:[],orders:[{id:'order1',buyer_id:u.id,status:'delivered',total_cents:10000,credit_cents:0,created_at:now,delivered_at:now}],items:[{id:'item1',order_id:'order1',product_id:'product1',product_name:'Prime de prueba',quantity:100}],reports:[],withdrawals:[],ledger:[],stocks:[],services};
 }
 const server=createServer(async(req,res)=>{
@@ -46,6 +50,12 @@ try{
    }
    if(role==='admin'){await page.evaluate(()=>document.querySelector('[data-nav="changes-offers"]').click());await page.locator('[data-action="changes-offer-new"]').click();await page.waitForSelector('[name="name"]');if(await page.locator('[name="workers"]').count())throw Error('La oferta aún preselecciona responsables');await page.locator('[data-action="close"]').first().click();}
     if(role==='admin'){
+     await page.evaluate(()=>document.querySelector('[data-nav="finances"]').click());
+     await page.locator('.finance-dashboard').waitFor();
+     for(const label of ['Tu ganancia acumulada','Tu saldo después de ajustes y retiros','Ajustes y correcciones','Pendiente total de pagar al equipo','De ese total, ya solicitaron retiro'])await page.getByText(label,{exact:true}).waitFor();
+     const visibleAmounts=await page.locator('.finance-dashboard').innerText();
+     if(!visibleAmounts.includes('6,11')||!visibleAmounts.includes('6,68')||!visibleAmounts.includes('0,57'))throw Error('No se explica la diferencia entre ganancia y saldo');
+     await page.locator('[data-action="finance-worker-detail"]').click();await page.getByText('Producción aprobada, neta',{exact:true}).waitFor();await page.locator('[data-action="close"]').first().click();
      await page.evaluate(()=>document.querySelector('[data-nav="workers"]').click());await page.locator('[data-action="user-edit"]').click();await page.locator('[data-action="worker-balance"]').click();
      if(await page.locator('[name="balance"]').inputValue()!=='9.00')throw Error('El saldo inicial de la corrección no coincide');
      await page.locator('[name="balance"]').fill('10.00');await page.locator('[name="reason"]').fill('Corrección de prueba');await page.locator('[name="confirmed"]').check();

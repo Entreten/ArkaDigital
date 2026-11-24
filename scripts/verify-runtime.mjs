@@ -6,6 +6,10 @@ for(let i=0;i<60;i++){
  await wait(10000);
 }
 if(!ready)throw Error('Render aún no sirve la revisión esperada. No se afirma que esté publicada.');
+const financePage=await fetch(url).then(r=>r.text());
+if(!financePage.includes('/finance-dashboard.js?v=finance-1'))throw Error('La página no carga el panel financiero nuevo');
+for(const asset of ['/finance-dashboard.js?v=finance-1','/finance-dashboard.css?v=finance-1'])if(!(await fetch(url+asset)).ok)throw Error('Falta un recurso del panel financiero');
+console.log('FINANCE_PUBLIC_RUNTIME_OK: versión esperada, conexión de la web a su base y recursos del panel financiero publicados.');
 async function mg(path,body){const r=await fetch('https://api.supabase.com/v1'+path,{method:body?'POST':'GET',headers:{Authorization:'Bearer '+process.env.SUPABASE_ACCESS_TOKEN,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined});if(!r.ok)throw Error('Verificación Supabase HTTP '+r.status);return r.json();}
 const projects=await mg('/projects'),matches=projects.filter(p=>/arka/i.test(p.name)),p=matches.length===1?matches[0]:projects.length===1?projects[0]:null;
 if(!p)throw Error('Proyecto ambiguo');

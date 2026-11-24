@@ -46,6 +46,7 @@ Comandos: npm install; npm test; npm run check; npm start.
 - El administrador puede editar trabajos y quitar asignaciones erróneas. No se eliminan asignaciones de producción que ya tengan cuentas o pagos; en servicios solo se liberan unidades pendientes de envío, sin borrar compras ni devolver dinero.
 - «Mis cuentas compradas» permite buscar un correo completo entre todos los pedidos propios, muestra producto, pedido y fecha, y abre la compra filtrada. La consulta usa una huella indexada y no descarga contraseñas de otras carpetas.
 - `readability.css` aumenta ligeramente la letra; no cambia temas, audio, reglas de negocio ni escala el diseño completo.
+- El panel financiero separa ganancia, correcciones y saldo del administrador. Expone la fórmula completa, distingue retiros solicitados de pagos realizados y detalla el saldo de cada trabajador sin restar dos veces las comisiones. Su presentación no modifica dinero.
 - En Trabajadores → Editar → Corregir saldo, solo el administrador fija el nuevo saldo total con motivo y confirmación. Se protege el dinero reservado, se impiden saldos negativos, sobrescrituras concurrentes y duplicados; cada diferencia queda en el historial del trabajador y como ajuste separado de la cuenta administrativa, sin alterar producción ni comisiones.
 - El administrador puede retirar una venta de prueba con confirmación y copia privada de recuperación. No se revierten silenciosamente pagos laborales ni se devuelven cuentas usadas al stock.
 
